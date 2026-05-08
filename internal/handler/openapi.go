@@ -463,11 +463,11 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						},
 						"reason": map[string]interface{}{
 							"type":        "string",
-							"description": "中断说明；与 continueAfter 同时为真时必填，将写入对话并由同一会话流式迭代继续",
+							"description": "可选。与 MCP 监控页「终止并说明」一致：非空时合并进当前工具返回给模型的文本（含 USER INTERRUPT NOTE 块）",
 						},
 						"continueAfter": map[string]interface{}{
 							"type":        "boolean",
-							"description": "为 true 时取消当前运行步骤并注入 reason 后继续迭代（非彻底停止）",
+							"description": "为 true 时仅终止当前进行中的 MCP 工具调用（不取消整轮任务）；须已有工具在执行，否则 400",
 						},
 					},
 				},

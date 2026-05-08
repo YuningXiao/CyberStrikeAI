@@ -19,6 +19,7 @@ import (
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/multiagent"
 
@@ -1495,6 +1496,8 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 	defer timeoutCancel()
 	defer cancelWithCause(nil)
+	taskCtx = mcp.WithMCPConversationID(taskCtx, conversationID)
+	taskCtx = mcp.WithToolRunRegistry(taskCtx, h.tasks)
 	progressCallback := h.createProgressCallback(taskCtx, cancelWithCause, conversationID, assistantMessageID, sendEvent)
 	taskCtx = h.injectReactHITLInterceptor(taskCtx, cancelWithCause, conversationID, assistantMessageID, sendEvent)
 
@@ -1728,22 +1731,39 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 		return
 	}
 
-	if req.ContinueAfter && strings.TrimSpace(req.Reason) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "continueAfter 为 true 时必须提供非空的 reason（中断说明）"})
+	if req.ContinueAfter {
+		if h.tasks.GetTask(req.ConversationID) == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到正在执行的任务"})
+			return
+		}
+		execID := h.tasks.ActiveMCPExecutionID(req.ConversationID)
+		if execID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有正在执行的 MCP 工具（例如模型尚在推理、尚未发起工具调用）。请等待工具开始执行后再试，或使用「彻底停止」结束整轮任务。"})
+			return
+		}
+		note := strings.TrimSpace(req.Reason)
+		if !h.agent.CancelMCPToolExecutionWithNote(execID, note) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到进行中的工具执行或该调用已结束"})
+			return
+		}
+		h.logger.Info("对话页仅终止当前 MCP 工具",
+			zap.String("conversationId", req.ConversationID),
+			zap.String("executionId", execID),
+			zap.Bool("hasNote", note != ""),
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"status":            "tool_abort_requested",
+			"conversationId":    req.ConversationID,
+			"executionId":       execID,
+			"message":           "已请求终止当前工具调用；工具返回后本轮推理将继续（与 MCP 监控页终止一致）。",
+			"continueAfter":     true,
+			"interruptWithNote": note != "",
+		})
 		return
 	}
 
 	var cause error = ErrTaskCancelled
 	msg := "已提交取消请求，任务将在当前步骤完成后停止。"
-	if req.ContinueAfter {
-		if !h.tasks.SetInterruptContinueReason(req.ConversationID, req.Reason) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "未找到正在执行的任务，无法提交中断说明"})
-			return
-		}
-		cause = ErrUserInterruptContinue
-		msg = "已提交中断说明，当前步骤结束后将写入对话并继续迭代。"
-	}
-
 	ok, err := h.tasks.CancelTask(req.ConversationID, cause)
 	if err != nil {
 		h.logger.Error("取消任务失败", zap.Error(err))
@@ -1758,10 +1778,10 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":           "cancelling",
-		"conversationId":   req.ConversationID,
+		"conversationId": req.ConversationID,
 		"message":          msg,
-		"continueAfter":    req.ContinueAfter,
-		"interruptWithNote": req.ContinueAfter,
+		"continueAfter":    false,
+		"interruptWithNote": false,
 	})
 }
 
@@ -2539,6 +2559,8 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 
 			// 创建进度回调函数：写 DB + 镜像到 task-events，支持刷新后继续流式展示。
 			progressCallback = h.createProgressCallback(taskCtx, cancelWithCause, conversationID, assistantMessageID, sendEvent)
+			taskCtx = mcp.WithMCPConversationID(taskCtx, conversationID)
+			taskCtx = mcp.WithToolRunRegistry(taskCtx, h.tasks)
 
 			// 使用队列配置的角色工具列表（如果为空，表示使用所有工具）
 			useBatchMulti := false
