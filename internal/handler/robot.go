@@ -40,8 +40,13 @@ const (
 	robotCmdRoles      = "角色"
 	robotCmdRolesList  = "角色列表"
 	robotCmdSwitchRole = "切换角色"
-	robotCmdDelete     = "删除"
-	robotCmdVersion    = "版本"
+	robotCmdDelete       = "删除"
+	robotCmdVersion      = "版本"
+	robotCmdProjects     = "项目"
+	robotCmdProjectsList = "项目列表"
+	robotCmdBindProject  = "绑定项目"
+	robotCmdNewProject   = "新建项目"
+	robotCmdUnbindProject = "解除项目"
 )
 
 // RobotHandler 企业微信/钉钉/飞书等机器人回调处理
@@ -269,21 +274,176 @@ func (h *RobotHandler) robotMessageTimeout() time.Duration {
 }
 
 func (h *RobotHandler) cmdHelp() string {
-	return "**【CyberStrikeAI 机器人命令】**\n\n" +
-		"- `帮助` `help` — 显示本帮助 | Show this help\n" +
-		"- `列表` `list` — 列出所有对话标题与 ID | List conversations\n" +
-		"- `切换 <ID>` `switch <ID>` — 指定对话继续 | Switch to conversation\n" +
-		"- `新对话` `new` — 开启新对话 | Start new conversation\n" +
-		"- `清空` `clear` — 清空当前上下文 | Clear context\n" +
-		"- `当前` `current` — 显示当前对话 ID 与标题 | Show current conversation\n" +
-		"- `停止` `stop` — 中断当前任务 | Stop running task\n" +
-		"- `角色` `roles` — 列出所有可用角色 | List roles\n" +
-		"- `角色 <名>` `role <name>` — 切换当前角色 | Switch role\n" +
-		"- `删除 <ID>` `delete <ID>` — 删除指定对话 | Delete conversation\n" +
-		"- `版本` `version` — 显示当前版本号 | Show version\n\n" +
-		"---\n" +
-		"除以上命令外，直接输入内容将发送给 AI 进行渗透测试/安全分析。\n" +
-		"Otherwise, send any text for AI penetration testing / security analysis."
+	var b strings.Builder
+	b.WriteString("【CyberStrikeAI 机器人命令】\n\n")
+	b.WriteString("【通用 General】\n")
+	b.WriteString("· 帮助 / help — 显示本帮助\n")
+	b.WriteString("· 版本 / version — 显示当前版本号\n")
+	b.WriteString("\n【对话 Conversation】\n")
+	b.WriteString("· 列表 / list — 列出所有对话标题与 ID\n")
+	b.WriteString("· 切换 <ID> / switch <ID> — 指定对话继续\n")
+	b.WriteString("· 新对话 / new — 开启新对话\n")
+	b.WriteString("· 清空 / clear — 清空当前上下文\n")
+	b.WriteString("· 当前 / current — 显示当前对话、角色与项目\n")
+	b.WriteString("· 停止 / stop — 中断当前任务\n")
+	b.WriteString("· 删除 <ID> / delete <ID> — 删除指定对话\n")
+	b.WriteString("\n【角色 Role】\n")
+	b.WriteString("· 角色 / roles — 列出所有可用角色\n")
+	b.WriteString("· 角色 <名> / role <name> — 切换当前角色\n")
+	if h.projectsEnabled() {
+		b.WriteString("\n【项目 Project】\n")
+		b.WriteString("· 项目 / projects — 列出所有项目\n")
+		b.WriteString("· 新建项目 <名称> / new project <name> — 创建并绑定当前对话\n")
+		b.WriteString("· 绑定项目 <ID或名称> / bind project <ID|name> — 绑定到已有项目\n")
+		b.WriteString("· 解除项目 / unbind project — 解除项目绑定\n")
+	}
+	b.WriteString("\n──────────────\n")
+	b.WriteString("除以上命令外，直接输入内容将发送给 AI 进行渗透测试/安全分析。")
+	return b.String()
+}
+
+func (h *RobotHandler) projectsEnabled() bool {
+	return h.config != nil && h.config.Project.Enabled
+}
+
+func (h *RobotHandler) resolveProjectByIDOrName(idOrName string) (*database.Project, string) {
+	idOrName = strings.TrimSpace(idOrName)
+	if idOrName == "" {
+		return nil, "请指定项目 ID 或名称，例如：绑定项目 xxx-xxx"
+	}
+	if p, err := h.db.GetProject(idOrName); err == nil {
+		return p, ""
+	}
+	list, err := h.db.ListProjects("", 200, 0)
+	if err != nil {
+		return nil, "查询项目失败: " + err.Error()
+	}
+	var matches []*database.Project
+	for _, p := range list {
+		if p.Name == idOrName {
+			matches = append(matches, p)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Sprintf("项目「%s」不存在。发送「项目」查看列表。", idOrName)
+	case 1:
+		return matches[0], ""
+	default:
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("名称「%s」匹配到多个项目，请使用 ID 绑定：\n", idOrName))
+		for _, p := range matches {
+			b.WriteString(fmt.Sprintf("· %s\n  ID: %s\n", p.Name, p.ID))
+		}
+		return nil, strings.TrimSuffix(b.String(), "\n")
+	}
+}
+
+func (h *RobotHandler) formatProjectLabel(projectID string) string {
+	if strings.TrimSpace(projectID) == "" {
+		return "未绑定"
+	}
+	if p, err := h.db.GetProject(projectID); err == nil {
+		return fmt.Sprintf("「%s」 (%s)", p.Name, p.ID)
+	}
+	return projectID
+}
+
+func (h *RobotHandler) cmdProjects() string {
+	if !h.projectsEnabled() {
+		return "项目功能未启用（config.project.enabled）。"
+	}
+	list, err := h.db.ListProjects("", 50, 0)
+	if err != nil {
+		return "获取项目列表失败: " + err.Error()
+	}
+	if len(list) == 0 {
+		return "暂无项目。发送「新建项目 <名称>」创建并绑定到当前对话。"
+	}
+	var b strings.Builder
+	b.WriteString("【项目列表】\n")
+	for i, p := range list {
+		if i >= 20 {
+			b.WriteString("… 仅显示前 20 条\n")
+			break
+		}
+		status := p.Status
+		if status == "" {
+			status = "active"
+		}
+		b.WriteString(fmt.Sprintf("· %s [%s]\n  ID: %s\n", p.Name, status, p.ID))
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func (h *RobotHandler) cmdBindProject(platform, userID, idOrName string) string {
+	if !h.projectsEnabled() {
+		return "项目功能未启用（config.project.enabled）。"
+	}
+	p, errMsg := h.resolveProjectByIDOrName(idOrName)
+	if p == nil {
+		return errMsg
+	}
+	convID, _ := h.getOrCreateConversation(platform, userID, "")
+	if convID == "" {
+		return "无法获取当前对话，请稍后再试。"
+	}
+	if err := h.db.SetConversationProjectID(convID, p.ID); err != nil {
+		return "绑定失败: " + err.Error()
+	}
+	return fmt.Sprintf("已将当前对话绑定到项目：「%s」\nID: %s", p.Name, p.ID)
+}
+
+func (h *RobotHandler) cmdNewProject(platform, userID, name string) string {
+	if !h.projectsEnabled() {
+		return "项目功能未启用（config.project.enabled）。"
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "请指定项目名称，例如：新建项目 某目标渗透"
+	}
+	p := &database.Project{Name: name, Status: "active"}
+	created, err := h.db.CreateProject(p)
+	if err != nil {
+		return "创建项目失败: " + err.Error()
+	}
+	convID, _ := h.getOrCreateConversation(platform, userID, name)
+	if convID == "" {
+		return fmt.Sprintf("项目已创建：「%s」\nID: %s\n（绑定当前对话失败，请手动发送「绑定项目 %s」）", created.Name, created.ID, created.ID)
+	}
+	if err := h.db.SetConversationProjectID(convID, created.ID); err != nil {
+		return fmt.Sprintf("项目已创建：「%s」\nID: %s\n绑定失败: %s", created.Name, created.ID, err.Error())
+	}
+	return fmt.Sprintf("已创建项目并绑定当前对话：「%s」\nID: %s", created.Name, created.ID)
+}
+
+func (h *RobotHandler) cmdUnbindProject(platform, userID string) string {
+	if !h.projectsEnabled() {
+		return "项目功能未启用（config.project.enabled）。"
+	}
+	sk := h.sessionKey(platform, userID)
+	h.mu.RLock()
+	convID := h.sessions[sk]
+	h.mu.RUnlock()
+	if convID == "" {
+		if persistedConvID, _ := h.loadSessionBinding(sk); persistedConvID != "" {
+			convID = persistedConvID
+		}
+	}
+	if convID == "" {
+		return "当前没有进行中的对话，无需解除绑定。"
+	}
+	projectID, err := h.db.GetConversationProjectID(convID)
+	if err != nil {
+		return "获取对话项目失败: " + err.Error()
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return "当前对话未绑定项目。"
+	}
+	if err := h.db.SetConversationProjectID(convID, ""); err != nil {
+		return "解除绑定失败: " + err.Error()
+	}
+	return "已解除当前对话的项目绑定。"
 }
 
 func (h *RobotHandler) cmdList() string {
@@ -357,7 +517,12 @@ func (h *RobotHandler) cmdCurrent(platform, userID string) string {
 		return "当前对话 ID: " + convID + "（获取标题失败）"
 	}
 	role := h.getRole(platform, userID)
-	return fmt.Sprintf("当前对话：「%s」\nID: %s\n当前角色: %s", conv.Title, conv.ID, role)
+	reply := fmt.Sprintf("当前对话：「%s」\nID: %s\n当前角色: %s", conv.Title, conv.ID, role)
+	if h.projectsEnabled() {
+		projectID, _ := h.db.GetConversationProjectID(conv.ID)
+		reply += "\n当前项目: " + h.formatProjectLabel(projectID)
+	}
+	return reply
 }
 
 func (h *RobotHandler) cmdRoles() string {
@@ -494,6 +659,26 @@ func (h *RobotHandler) handleRobotCommand(platform, userID, text string) (string
 		return h.cmdDelete(platform, userID, convID), true
 	case text == robotCmdVersion || text == "version":
 		return h.cmdVersion(), true
+	case text == robotCmdProjects || text == robotCmdProjectsList || text == "projects":
+		return h.cmdProjects(), true
+	case text == robotCmdUnbindProject || text == "unbind project":
+		return h.cmdUnbindProject(platform, userID), true
+	case strings.HasPrefix(text, robotCmdNewProject+" ") || strings.HasPrefix(text, "new project "):
+		var name string
+		if strings.HasPrefix(text, robotCmdNewProject+" ") {
+			name = strings.TrimSpace(text[len(robotCmdNewProject)+1:])
+		} else {
+			name = strings.TrimSpace(text[len("new project "):])
+		}
+		return h.cmdNewProject(platform, userID, name), true
+	case strings.HasPrefix(text, robotCmdBindProject+" ") || strings.HasPrefix(text, "bind project "):
+		var idOrName string
+		if strings.HasPrefix(text, robotCmdBindProject+" ") {
+			idOrName = strings.TrimSpace(text[len(robotCmdBindProject)+1:])
+		} else {
+			idOrName = strings.TrimSpace(text[len("bind project "):])
+		}
+		return h.cmdBindProject(platform, userID, idOrName), true
 	default:
 		return "", false
 	}
