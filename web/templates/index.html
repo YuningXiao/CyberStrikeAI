@@ -1114,20 +1114,22 @@
                 </div>
 
                 <!-- MCP状态监控页面 -->
-                <div id="page-mcp-monitor" class="page">
+                <div id="page-mcp-monitor" class="page mcp-monitor-page">
                     <div class="page-header">
-<h2 data-i18n="mcp.monitorTitle">MCP 状态监控</h2>
-                    <button class="btn-secondary" onclick="refreshMonitorPanel()"><span data-i18n="common.refresh">刷新</span></button>
+                        <div class="page-header-main">
+                            <h2 data-i18n="mcp.monitorTitle">MCP 状态监控</h2>
+                            <p id="monitor-stats-subtitle" class="monitor-page-subtitle" hidden></p>
+                        </div>
+                        <div class="page-header-actions">
+                            <button type="button" class="btn-secondary btn-icon-text" onclick="refreshMonitorPanel()" aria-label="刷新">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                <span data-i18n="common.refresh">刷新</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="page-content">
                         <div class="monitor-sections">
                             <section class="monitor-section monitor-overview">
-                                <div class="section-header monitor-stats-section-header">
-                                    <div class="monitor-stats-header-text">
-                                        <h3 data-i18n="mcp.execStats">执行统计</h3>
-                                        <p id="monitor-stats-subtitle" class="monitor-stats-subtitle" hidden></p>
-                                    </div>
-                                </div>
                                 <div id="monitor-stats" class="mcp-exec-stats-root">
                                     <div class="monitor-empty" data-i18n="mcpMonitor.loading">加载中...</div>
                                 </div>

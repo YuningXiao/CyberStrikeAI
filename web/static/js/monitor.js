@@ -3329,6 +3329,9 @@ let monitorPanelFetchSeq = 0;
 const monitorState = {
     executions: [],
     stats: {},
+    timeline: null,
+    timelineRange: null,
+    timelineError: null,
     lastFetchedAt: null,
     pagination: {
         page: 1,
@@ -3415,17 +3418,15 @@ async function refreshMonitorPanel(page = null) {
             url += `&tool=${encodeURIComponent(currentToolFilter)}`;
         }
         
-        const response = await apiFetch(url, { method: 'GET' });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(result.error || '获取监控数据失败');
-        }
+        const { result, timeline, timelineError } = await fetchMonitorAndTimeline(url);
         if (mySeq !== monitorPanelFetchSeq) {
             return;
         }
 
         monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
         monitorState.stats = result.stats || {};
+        monitorState.timeline = timeline;
+        monitorState.timelineError = timelineError;
         monitorState.lastFetchedAt = new Date();
         
         // 更新分页信息
@@ -3499,17 +3500,15 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
             url += `&tool=${encodeURIComponent(toolFilter)}`;
         }
         
-        const response = await apiFetch(url, { method: 'GET' });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(result.error || '获取监控数据失败');
-        }
+        const { result, timeline, timelineError } = await fetchMonitorAndTimeline(url);
         if (mySeq !== monitorPanelFetchSeq) {
             return;
         }
 
         monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
         monitorState.stats = result.stats || {};
+        monitorState.timeline = timeline;
+        monitorState.timelineError = timelineError;
         monitorState.lastFetchedAt = new Date();
         
         // 更新分页信息
@@ -3541,6 +3540,399 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
 
 
 const MCP_STATS_TOP_N = 6;
+const MCP_TIMELINE_RANGES = ['24h', '7d', '30d'];
+
+function getMcpMonitorTimelineRange() {
+    if (monitorState.timelineRange && MCP_TIMELINE_RANGES.includes(monitorState.timelineRange)) {
+        return monitorState.timelineRange;
+    }
+    const saved = localStorage.getItem('mcpMonitorTimelineRange');
+    const range = MCP_TIMELINE_RANGES.includes(saved) ? saved : '7d';
+    monitorState.timelineRange = range;
+    return range;
+}
+
+async function fetchMonitorAndTimeline(monitorUrl) {
+    const range = getMcpMonitorTimelineRange();
+    const [monitorResp, timelineResp] = await Promise.all([
+        apiFetch(monitorUrl, { method: 'GET' }),
+        apiFetch(`/api/monitor/calls-timeline?range=${encodeURIComponent(range)}`, { method: 'GET' })
+    ]);
+    const result = await monitorResp.json().catch(() => ({}));
+    if (!monitorResp.ok) {
+        throw new Error(result.error || '获取监控数据失败');
+    }
+    let timeline = null;
+    let timelineError = null;
+    try {
+        const timelineJson = await timelineResp.json().catch(() => ({}));
+        if (timelineResp.ok) {
+            timeline = timelineJson;
+        } else {
+            timelineError = timelineJson.error || 'timeline failed';
+        }
+    } catch (err) {
+        timelineError = err && err.message ? err.message : 'timeline failed';
+    }
+    return { result, timeline, timelineError };
+}
+
+function formatMcpTimelineLabel(isoOrDate, rangeKey, locale) {
+    const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+    if (Number.isNaN(d.getTime())) return '';
+    if (rangeKey === '24h') {
+        return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+    }
+    if (rangeKey === '30d') {
+        return d.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' });
+    }
+    return d.toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function buildMcpTimelineSvg(points, rangeKey) {
+    if (!Array.isArray(points) || points.length === 0) return '';
+    const W = 400;
+    const H = 140;
+    const padL = 32;
+    const padR = 8;
+    const padT = 12;
+    const padB = 24;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const maxVal = Math.max(1, ...points.map((p) => p.total || 0));
+    const hasFailed = points.some((p) => (p.failed || 0) > 0);
+    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+
+    const coords = points.map((p, i) => {
+        const x = padL + (points.length <= 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+        const y = padT + plotH - ((p.total || 0) / maxVal) * plotH;
+        return { x, y, p, i };
+    });
+
+    const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(2)} ${c.y.toFixed(2)}`).join(' ');
+    const baseY = padT + plotH;
+    const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(2)} ${baseY} L ${coords[0].x.toFixed(2)} ${baseY} Z`;
+
+    let failPath = '';
+    if (hasFailed) {
+        failPath = coords.map((c, i) => {
+            const fy = padT + plotH - ((c.p.failed || 0) / maxVal) * plotH;
+            return `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(2)} ${fy.toFixed(2)}`;
+        }).join(' ');
+    }
+
+    let peakIdx = 0;
+    points.forEach((p, i) => {
+        if ((p.total || 0) >= (points[peakIdx].total || 0)) peakIdx = i;
+    });
+
+    const yTicks = [0, Math.ceil(maxVal / 2), maxVal];
+    const yLines = yTicks.map((v) => {
+        const y = padT + plotH - (v / maxVal) * plotH;
+        const isBase = v === 0;
+        return `<line class="mcp-stats-timeline-grid${isBase ? ' mcp-stats-timeline-grid--base' : ''}" x1="${padL}" y1="${y.toFixed(2)}" x2="${W - padR}" y2="${y.toFixed(2)}" />` +
+            `<text class="mcp-stats-timeline-y" x="${padL - 4}" y="${(y + 3.5).toFixed(2)}">${v}</text>`;
+    }).join('');
+
+    const tickIdx = points.length <= 2
+        ? points.map((_, i) => i)
+        : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+    const xLabels = tickIdx.map((idx) => {
+        const c = coords[idx];
+        const label = formatMcpTimelineLabel(c.p.t, rangeKey, locale);
+        return `<text class="mcp-stats-timeline-axis" x="${c.x.toFixed(2)}" y="${H - 5}" text-anchor="middle">${escapeHtml(label)}</text>`;
+    }).join('');
+
+    const dots = coords.map((c) => {
+        const tipTime = formatMcpTimelineLabel(c.p.t, rangeKey, locale);
+        const isPeak = c.i === peakIdx && (c.p.total || 0) > 0;
+        const dotClass = 'mcp-stats-timeline-dot' + (isPeak ? ' mcp-stats-timeline-dot--peak' : '');
+        return `<circle class="${dotClass}" cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" r="${isPeak ? 3 : 2.5}"
+            data-time="${escapeHtml(tipTime)}"
+            data-total="${c.p.total || 0}"
+            data-failed="${c.p.failed || 0}" />`;
+    }).join('');
+
+    const peakC = coords[peakIdx];
+    const peakMarker = (peakC.p.total || 0) > 0
+        ? `<circle class="mcp-stats-timeline-peak-glow" cx="${peakC.x.toFixed(2)}" cy="${peakC.y.toFixed(2)}" r="7" />`
+        : '';
+
+    return `<svg class="mcp-stats-timeline__chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+            <linearGradient id="mcpTimelineAreaFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.28"/>
+                <stop offset="85%" stop-color="#3b82f6" stop-opacity="0.04"/>
+                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="mcpTimelineLineStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#60a5fa"/>
+                <stop offset="50%" stop-color="#3b82f6"/>
+                <stop offset="100%" stop-color="#2563eb"/>
+            </linearGradient>
+        </defs>
+        ${yLines}
+        <path class="mcp-stats-timeline-area" d="${areaPath}" fill="url(#mcpTimelineAreaFill)" />
+        ${peakMarker}
+        <path class="mcp-stats-timeline-line" d="${linePath}" stroke="url(#mcpTimelineLineStroke)" />
+        ${hasFailed ? `<path class="mcp-stats-timeline-line mcp-stats-timeline-line--fail" d="${failPath}" />` : ''}
+        ${dots}
+        ${xLabels}
+    </svg>`;
+}
+
+let mcpTimelineEventsBound = false;
+let mcpTimelineTooltipEl = null;
+
+function bindMcpStatsTimelineEvents() {
+    const root = document.getElementById('monitor-stats');
+    if (!root) return;
+
+    root.querySelectorAll('.mcp-stats-timeline__range').forEach((btn) => {
+        btn.onclick = function () {
+            const range = btn.getAttribute('data-range');
+            if (range) setMcpMonitorTimelineRange(range);
+        };
+    });
+
+    if (mcpTimelineEventsBound) return;
+    if (!mcpTimelineTooltipEl) {
+        mcpTimelineTooltipEl = document.createElement('div');
+        mcpTimelineTooltipEl.className = 'mcp-stats-timeline-tooltip';
+        mcpTimelineTooltipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(mcpTimelineTooltipEl);
+    }
+
+    root.addEventListener('mousemove', function (e) {
+        const dot = e.target.closest('.mcp-stats-timeline-dot');
+        if (!dot || !mcpTimelineTooltipEl) {
+            root.querySelectorAll('.mcp-stats-timeline-dot.is-active').forEach((d) => d.classList.remove('is-active'));
+            mcpTimelineTooltipEl.style.display = 'none';
+            return;
+        }
+        root.querySelectorAll('.mcp-stats-timeline-dot.is-active').forEach((d) => d.classList.remove('is-active'));
+        dot.classList.add('is-active');
+        const time = dot.getAttribute('data-time') || '';
+        const total = dot.getAttribute('data-total') || '0';
+        const failed = dot.getAttribute('data-failed') || '0';
+        const tip = mcpMonitorT('timelineTooltip', { time, total, failed })
+            || `${time}：${total} 次（失败 ${failed}）`;
+        mcpTimelineTooltipEl.textContent = tip;
+        mcpTimelineTooltipEl.style.display = 'block';
+        mcpTimelineTooltipEl.style.left = `${e.clientX}px`;
+        mcpTimelineTooltipEl.style.top = `${e.clientY}px`;
+    });
+
+    root.addEventListener('mouseleave', function (e) {
+        if (!e.target.closest || !e.target.closest('.mcp-stats-combined__timeline, .mcp-stats-timeline')) return;
+        if (e.relatedTarget && root.contains(e.relatedTarget)) return;
+        root.querySelectorAll('.mcp-stats-timeline-dot.is-active').forEach((d) => d.classList.remove('is-active'));
+        if (mcpTimelineTooltipEl) mcpTimelineTooltipEl.style.display = 'none';
+    });
+
+    mcpTimelineEventsBound = true;
+}
+
+function getMcpTimelineRangeLabel(rangeKey) {
+    const key = rangeKey === '24h' ? 'timelineRange24h' : rangeKey === '30d' ? 'timelineRange30d' : 'timelineRange7d';
+    return mcpMonitorT(key) || rangeKey;
+}
+
+function syncMcpMonitorTimelineRangeUI(activeRange) {
+    const range = activeRange || getMcpMonitorTimelineRange();
+    document.querySelectorAll('#monitor-stats .mcp-stats-timeline__range').forEach((btn) => {
+        const r = btn.getAttribute('data-range');
+        const on = r === range;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const scopeBadge = document.querySelector('#monitor-stats .mcp-stats-scope-badge--timeline');
+    if (scopeBadge) scopeBadge.textContent = getMcpTimelineRangeLabel(range);
+}
+
+function renderMcpStatsScopeBadges(showTools, showTimeline) {
+    const parts = [];
+    if (showTools) {
+        const cumulative = mcpMonitorT('scopeCumulative') || '累计';
+        parts.push(`<span class="mcp-stats-scope-badge mcp-stats-scope-badge--cumulative">${escapeHtml(cumulative)}</span>`);
+    }
+    if (showTimeline) {
+        const range = getMcpMonitorTimelineRange();
+        parts.push(`<span class="mcp-stats-scope-badge mcp-stats-scope-badge--timeline">${escapeHtml(getMcpTimelineRangeLabel(range))}</span>`);
+    }
+    if (!parts.length) return '';
+    return `<div class="mcp-stats-combined__scopes" role="note">${parts.join('')}</div>`;
+}
+
+function buildTimelineSparseHint(points, timeline) {
+    if (!Array.isArray(points) || points.length < 4 || !timeline || !timeline.summary) return '';
+    const summaryTotal = timeline.summary.totalCalls || 0;
+    const peak = timeline.summary.peak || 0;
+    if (summaryTotal === 0 || peak === 0) return '';
+
+    const nonZero = points.filter((p) => (p.total || 0) > 0).length;
+    const nonZeroRatio = nonZero / points.length;
+    let peakIdx = 0;
+    points.forEach((p, i) => {
+        if ((p.total || 0) >= (points[peakIdx].total || 0)) peakIdx = i;
+    });
+    const peakNearEnd = peakIdx >= Math.floor(points.length * 0.8);
+    if (nonZeroRatio > 0.3 && !peakNearEnd) return '';
+
+    const rangeKey = timeline.range || getMcpMonitorTimelineRange();
+    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const peakTime = timeline.summary.peakAt
+        ? formatMcpTimelineLabel(timeline.summary.peakAt, rangeKey, locale)
+        : formatMcpTimelineLabel(points[peakIdx].t, rangeKey, locale);
+    return mcpMonitorT('timelineSparseHint', { peak, peakTime })
+        || `该时段多数时间为 0，峰值 ${peak} 次出现在 ${peakTime}`;
+}
+
+async function setMcpMonitorTimelineRange(range) {
+    if (!MCP_TIMELINE_RANGES.includes(range)) return;
+    localStorage.setItem('mcpMonitorTimelineRange', range);
+    monitorState.timelineRange = range;
+    monitorState.timelineError = null;
+    syncMcpMonitorTimelineRangeUI(range);
+    try {
+        const timelineResp = await apiFetch(`/api/monitor/calls-timeline?range=${encodeURIComponent(range)}`, { method: 'GET' });
+        const timelineJson = await timelineResp.json().catch(() => ({}));
+        if (!timelineResp.ok) {
+            throw new Error(timelineJson.error || '加载趋势失败');
+        }
+        monitorState.timeline = timelineJson;
+        const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
+        if (timelineInner) {
+            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError);
+            bindMcpStatsTimelineEvents();
+            syncMcpMonitorTimelineRangeUI(range);
+        } else if (monitorState.stats && Object.keys(monitorState.stats).length > 0) {
+            renderMonitorStats(monitorState.stats, monitorState.lastFetchedAt);
+        }
+    } catch (err) {
+        monitorState.timelineError = err.message || 'error';
+        const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
+        if (timelineInner) {
+            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError);
+            bindMcpStatsTimelineEvents();
+            syncMcpMonitorTimelineRangeUI(range);
+        }
+    }
+}
+window.setMcpMonitorTimelineRange = setMcpMonitorTimelineRange;
+
+function renderMcpStatsTimelineRangeButtons() {
+    const activeRange = getMcpMonitorTimelineRange();
+    return MCP_TIMELINE_RANGES.map((r) => {
+        const labelKey = r === '24h' ? 'timelineRange24h' : r === '30d' ? 'timelineRange30d' : 'timelineRange7d';
+        const label = mcpMonitorT(labelKey) || r;
+        return `<button type="button" class="mcp-stats-timeline__range${activeRange === r ? ' is-active' : ''}"
+            data-range="${r}" aria-pressed="${activeRange === r ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+    }).join('');
+}
+
+function renderMcpStatsTimelineBody(timeline, timelineError) {
+    const hint = mcpMonitorT('timelineHint') || '全部工具合计';
+
+    if (timelineError) {
+        const errText = mcpMonitorT('timelineLoadError') || '无法加载调用趋势';
+        return `<p class="mcp-stats-timeline-error">${escapeHtml(errText)}：${escapeHtml(timelineError)}</p>`;
+    }
+
+    const points = timeline && Array.isArray(timeline.points) ? timeline.points : [];
+    const summaryTotal = timeline && timeline.summary ? (timeline.summary.totalCalls || 0) : 0;
+    const peak = timeline && timeline.summary ? (timeline.summary.peak || 0) : 0;
+    const summaryText = mcpMonitorT('timelineSummary', { total: summaryTotal, peak })
+        || `区间内 ${summaryTotal} 次 · 峰值 ${peak}`;
+
+    if (points.length === 0 || summaryTotal === 0) {
+        const noData = mcpMonitorT('timelineNoData') || '该时段暂无调用';
+        return `<p class="mcp-stats-timeline-empty">${escapeHtml(noData)}</p>`;
+    }
+
+    const rangeKey = timeline.range || getMcpMonitorTimelineRange();
+    const chartSvg = buildMcpTimelineSvg(points, rangeKey);
+    const totalLegend = mcpMonitorT('timelineTotalLegend') || '总调用';
+    const failLegend = mcpMonitorT('timelineFailedLegend') || '失败';
+    const hasFailed = points.some((p) => (p.failed || 0) > 0);
+    const sparseHint = buildTimelineSparseHint(points, timeline);
+    const sparseHtml = sparseHint
+        ? `<p class="mcp-stats-timeline__sparse-hint">${escapeHtml(sparseHint)}</p>`
+        : '';
+
+    return `
+        <p class="mcp-stats-timeline__inline-meta">${escapeHtml(hint)} · ${escapeHtml(summaryText)}</p>
+        <div class="mcp-stats-timeline__chart-wrap">${chartSvg}</div>
+        ${sparseHtml}
+        <div class="mcp-stats-timeline__legend">
+            <span class="mcp-stats-timeline__legend-item">${escapeHtml(totalLegend)}</span>
+            ${hasFailed ? `<span class="mcp-stats-timeline__legend-item mcp-stats-timeline__legend-item--fail">${escapeHtml(failLegend)}</span>` : ''}
+        </div>`;
+}
+
+function renderMcpStatsCombinedSection(topTools, totals, activeToolFilter, timeline, timelineError, showTimeline) {
+    const statsTitle = mcpMonitorT('toolStatsTitle') || '工具统计';
+    const timelineTitle = mcpMonitorT('timelineTitle') || '调用趋势';
+    const statsHint = mcpMonitorT('toolStatsHint') || '点击色条或列表行筛选下方执行记录';
+    const hasTools = topTools.length > 0;
+
+    if (!hasTools && !showTimeline) return '';
+
+    const filterChip = activeToolFilter
+        ? `<span class="mcp-stats-filter-chip" title="${escapeHtml(mcpMonitorT('filterByToolTitle', { tool: activeToolFilter }) || activeToolFilter)}">
+            <span class="mcp-stats-filter-chip__label">${escapeHtml(mcpMonitorT('filterActive', { tool: activeToolFilter }) || `已筛选：${activeToolFilter}`)}</span>
+            <button type="button" class="mcp-stats-filter-chip__clear mcp-stats-clear-filter" aria-label="${escapeHtml(mcpMonitorT('clearToolFilter') || '清除工具筛选')}">×</button>
+        </span>`
+        : '';
+
+    const rangeButtons = showTimeline
+        ? `<div class="mcp-stats-timeline__ranges" role="group" aria-label="${escapeHtml(timelineTitle)}">${renderMcpStatsTimelineRangeButtons()}</div>`
+        : '';
+
+    const panelTitle = showTimeline && hasTools
+        ? `${statsTitle} · ${timelineTitle}`
+        : (hasTools ? statsTitle : timelineTitle);
+
+    const scopeBadges = renderMcpStatsScopeBadges(hasTools, showTimeline);
+    const metaHint = hasTools ? statsHint : '';
+
+    const timelineCol = showTimeline
+        ? `<div class="mcp-stats-combined__timeline">
+            <p class="mcp-stats-combined__col-label">${escapeHtml(timelineTitle)}</p>
+            <div class="mcp-stats-combined__timeline-inner">${renderMcpStatsTimelineBody(timeline, timelineError)}</div>
+        </div>`
+        : '';
+
+    let bodyMod = 'mcp-stats-combined__body';
+    if (hasTools && showTimeline) bodyMod += ' mcp-stats-combined__body--full';
+    else if (hasTools) bodyMod += ' mcp-stats-combined__body--tools';
+    else bodyMod += ' mcp-stats-combined__body--timeline';
+
+    const mainBlock = hasTools
+        ? `<div class="mcp-stats-combined__main">${renderMcpStatsToolsPanel(topTools, totals, activeToolFilter)}</div>`
+        : '';
+
+    return `
+        <section class="mcp-stats-combined" aria-label="${escapeHtml(panelTitle)}">
+            <header class="mcp-stats-combined__head">
+                <div class="mcp-stats-combined__head-text">
+                    <h4 class="mcp-stats-combined__title">${escapeHtml(panelTitle)}</h4>
+                    <div class="mcp-stats-combined__meta-row">
+                        ${scopeBadges}
+                        ${metaHint ? `<p class="mcp-stats-combined__meta">${escapeHtml(metaHint)}</p>` : ''}
+                    </div>
+                </div>
+                <div class="mcp-stats-combined__actions">
+                    ${filterChip}
+                    ${rangeButtons}
+                </div>
+            </header>
+            <div class="${bodyMod}">
+                ${mainBlock}
+                ${timelineCol}
+            </div>
+        </section>`;
+}
 
 function mcpMonitorT(key, params) {
     if (typeof window.t !== 'function') return '';
@@ -3611,6 +4003,69 @@ function getMcpToolRateClass(rateNum) {
 }
 
 const MCP_STATS_DIST_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#14b8a6', '#ec4899'];
+const MCP_STATS_CHART_MIN_PCT = 5;
+
+function buildMcpStatsChartSegments(topTools, totals, options = {}) {
+    const groupSmall = options.groupSmall !== false;
+    const minPct = options.minPct ?? MCP_STATS_CHART_MIN_PCT;
+    const othersLabel = mcpMonitorT('distOthers') || '其他工具';
+    const topNTotal = topTools.reduce((s, t) => s + (t.totalCalls || 0), 0);
+    const otherCalls = Math.max(0, totals.total - topNTotal);
+
+    const segments = [];
+    let bundledCalls = otherCalls;
+
+    topTools.forEach((tool, i) => {
+        const calls = tool.totalCalls || 0;
+        if (calls <= 0 || totals.total <= 0) return;
+        const pct = (calls / totals.total) * 100;
+        if (groupSmall && pct < minPct) {
+            bundledCalls += calls;
+            return;
+        }
+        segments.push({
+            color: MCP_STATS_DIST_COLORS[i % MCP_STATS_DIST_COLORS.length],
+            name: tool.toolName || '',
+            calls,
+            pct: pct.toFixed(1),
+            pctNum: pct,
+            isOthers: false,
+            colorIndex: i,
+        });
+    });
+
+    if (bundledCalls > 0 && totals.total > 0) {
+        const pct = (bundledCalls / totals.total) * 100;
+        segments.push({
+            color: '#cbd5e1',
+            name: othersLabel,
+            calls: bundledCalls,
+            pct: pct.toFixed(1),
+            pctNum: pct,
+            isOthers: true,
+            colorIndex: topTools.length,
+        });
+    }
+
+    let acc = 0;
+    return segments.map((s) => {
+        const start = acc;
+        acc += s.pctNum;
+        return { ...s, start, end: acc };
+    });
+}
+
+function renderMcpStatsShareCell(sharePct, color) {
+    const width = Math.min(100, Math.max(0, parseFloat(sharePct) || 0));
+    return `<td class="mcp-stats-col-share">
+        <div class="mcp-stats-share-cell">
+            <span class="mcp-stats-share-pct">${escapeHtml(sharePct)}%</span>
+            <span class="mcp-stats-share-track" aria-hidden="true">
+                <span class="mcp-stats-share-fill" style="width:${width.toFixed(1)}%;background:${color}"></span>
+            </span>
+        </div>
+    </td>`;
+}
 
 function mcpStatsDescribeDonutSegment(startPct, endPct, outerR, innerR) {
     if (endPct <= startPct) return '';
@@ -3675,21 +4130,37 @@ function previewMcpStatsDistCenter(panel, toolName, pct) {
 
 function setMcpStatsDistHover(toolName) {
     const panel = document.querySelector('.mcp-stats-dist-panel');
-    if (!panel) return;
-    const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(toolName) : toolName.replace(/"/g, '\\"');
-    panel.querySelectorAll('.mcp-stats-dist-segment, .mcp-stats-dist-legend-item').forEach((el) => {
-        const t = el.getAttribute('data-tool-name') || '';
-        const match = toolName && t === toolName;
-        el.classList.toggle('is-highlighted', !!match);
-        el.classList.toggle('is-dimmed', !!toolName && !match && t);
-    });
-    if (toolName) {
-        const el = panel.querySelector(`[data-tool-name="${esc}"]`);
-        if (el) {
-            previewMcpStatsDistCenter(panel, toolName, el.getAttribute('data-pct') || '');
+    const root = document.getElementById('monitor-stats');
+    const esc = toolName && typeof CSS !== 'undefined' && CSS.escape
+        ? CSS.escape(toolName)
+        : (toolName || '').replace(/"/g, '\\"');
+
+    if (panel) {
+        panel.querySelectorAll('.mcp-stats-dist-segment, .mcp-stats-dist-legend-item').forEach((el) => {
+            const t = el.getAttribute('data-tool-name') || '';
+            const match = toolName && t === toolName;
+            el.classList.toggle('is-highlighted', !!match);
+            el.classList.toggle('is-dimmed', !!toolName && !match && t);
+        });
+        if (toolName) {
+            const el = panel.querySelector(`[data-tool-name="${esc}"]`);
+            if (el) {
+                previewMcpStatsDistCenter(panel, toolName, el.getAttribute('data-pct') || '');
+            }
+        } else {
+            resetMcpStatsDistCenter(panel);
         }
-    } else {
-        resetMcpStatsDistCenter(panel);
+    }
+
+    if (root) {
+        root.querySelectorAll(
+            'tr.mcp-stats-tool-row[data-tool-name], .mcp-stats-tool-item[data-tool-name], .mcp-stats-proportion-seg[data-tool-name]'
+        ).forEach((el) => {
+            const t = el.getAttribute('data-tool-name') || '';
+            const match = toolName && t === toolName;
+            el.classList.toggle('is-highlighted', !!match);
+            el.classList.toggle('is-dimmed', !!toolName && !match && t);
+        });
     }
 }
 
@@ -3703,48 +4174,17 @@ function handleMonitorStatsToolFilter(toolName) {
     filterMonitorByTool(toolName);
 }
 
-function renderMcpStatsInsightPanel(topTools, totals, activeToolFilter = '') {
+function renderMcpStatsInsightPanel(topTools, totals, activeToolFilter = '', options = {}) {
+    const embedded = !!options.embedded;
     const distTitle = mcpMonitorT('distTitle') || '调用分布';
-    const distLegend = mcpMonitorT('distLegend') || '扇区面积为占全部调用比例';
-    const distClickHint = mcpMonitorT('distClickHint') || '点击图例或扇区筛选执行记录';
+    const distClickHint = mcpMonitorT('distClickHint') || '点击扇区筛选执行记录';
     const distOthersTitle = mcpMonitorT('distOthersNoFilter') || '其他工具无法单独筛选';
     const top6ShareLabel = mcpMonitorT('distTop6Share', { n: MCP_STATS_TOP_N }) || `Top ${MCP_STATS_TOP_N} 占全部调用`;
-    const othersLabel = mcpMonitorT('distOthers') || '其他工具';
-    const callsUnit = (n) => mcpMonitorT('distCallsUnit', { n }) || `${n} 次`;
 
     const top6Total = topTools.reduce((s, t) => s + (t.totalCalls || 0), 0);
     const top6SharePct = totals.total > 0 ? ((top6Total / totals.total) * 100).toFixed(1) : '0.0';
-    const otherCalls = Math.max(0, totals.total - top6Total);
 
-    let acc = 0;
-    const segments = [];
-    topTools.forEach((tool, i) => {
-        const calls = tool.totalCalls || 0;
-        if (calls <= 0 || totals.total <= 0) return;
-        const pct = (calls / totals.total) * 100;
-        segments.push({
-            color: MCP_STATS_DIST_COLORS[i % MCP_STATS_DIST_COLORS.length],
-            start: acc,
-            end: acc + pct,
-            name: tool.toolName || '',
-            calls,
-            pct: pct.toFixed(1),
-            isOthers: false,
-        });
-        acc += pct;
-    });
-    if (otherCalls > 0 && totals.total > 0) {
-        const pct = (otherCalls / totals.total) * 100;
-        segments.push({
-            color: '#cbd5e1',
-            start: acc,
-            end: acc + pct,
-            name: othersLabel,
-            calls: otherCalls,
-            pct: pct.toFixed(1),
-            isOthers: true,
-        });
-    }
+    const segments = buildMcpStatsChartSegments(topTools, totals, { groupSmall: embedded });
 
     const segmentPathsHtml = segments.map((s) => {
         const pathD = mcpStatsDescribeDonutSegment(s.start, s.end, 48, 30);
@@ -3766,12 +4206,12 @@ function renderMcpStatsInsightPanel(topTools, totals, activeToolFilter = '') {
             aria-label="${segAria}" />`;
     }).join('');
 
-    const legendHtml = segments.map((s) => {
+    const legendHtml = embedded ? '' : segments.map((s) => {
         const isActive = !s.isOthers && activeToolFilter && activeToolFilter === s.name;
         const inner = `
             <span class="mcp-stats-dist-swatch" style="--swatch-color:${s.color}"></span>
             <span class="mcp-stats-dist-legend-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-            <span class="mcp-stats-dist-legend-meta"><em>${s.pct}%</em><span>${escapeHtml(callsUnit(s.calls))}</span></span>`;
+            <span class="mcp-stats-dist-legend-pct">${s.pct}%</span>`;
         if (s.isOthers) {
             return `<li class="mcp-stats-dist-legend-item is-others" title="${escapeHtml(distOthersTitle)}" data-is-others="1">${inner}</li>`;
         }
@@ -3788,24 +4228,34 @@ function renderMcpStatsInsightPanel(topTools, totals, activeToolFilter = '') {
         </li>`;
     }).join('');
 
-    const centerLabel = `Top ${MCP_STATS_TOP_N}`;
+    const centerLabel = embedded ? (mcpMonitorT('distTitle') || '占比') : `Top ${MCP_STATS_TOP_N}`;
     const distHint = totals.total > 0
         ? (mcpMonitorT('distTotalCalls', { n: totals.total }) || `共 ${totals.total} 次调用`)
         : '';
 
-    return `
-        <div class="mcp-stats-tools-panel mcp-stats-dist-panel" aria-label="${escapeHtml(distTitle)}"
-            data-center-label="${escapeHtml(centerLabel)}"
-            data-center-value="${top6SharePct}"
-            data-center-suffix="%">
+    const bodyClass = embedded ? 'mcp-stats-dist-body mcp-stats-dist-body--chart-only' : 'mcp-stats-dist-body mcp-stats-dist-body--side';
+    const legendBlock = legendHtml
+        ? `<ul class="mcp-stats-dist-legend mcp-stats-dist-legend--side">${legendHtml}</ul>`
+        : '';
+
+    const headerHtml = embedded
+        ? `<div class="mcp-stats-dist-embedded-title">${escapeHtml(distTitle)}</div>`
+        : `
             <div class="mcp-stats-tools-header">
                 <div class="mcp-stats-tools-heading">
                     <h4 class="mcp-stats-tools-title">${escapeHtml(distTitle)}</h4>
-                    <span class="mcp-stats-tools-legend">${escapeHtml(distLegend)} · ${escapeHtml(distClickHint)}</span>
+                    <span class="mcp-stats-tools-legend">${escapeHtml(distClickHint)}</span>
                 </div>
                 <span class="mcp-stats-tools-hint">${escapeHtml(distHint)}</span>
-            </div>
-            <div class="mcp-stats-dist-body mcp-stats-dist-body--stacked">
+            </div>`;
+
+    return `
+        <div class="mcp-stats-dist-panel${embedded ? ' mcp-stats-dist-panel--embedded' : ''}" aria-label="${escapeHtml(distTitle)}"
+            data-center-label="${escapeHtml(centerLabel)}"
+            data-center-value="${top6SharePct}"
+            data-center-suffix="%">
+            ${headerHtml}
+            <div class="${bodyClass}">
                 <div class="mcp-stats-dist-chart-stage">
                     <div class="mcp-stats-dist-chart-wrap">
                         <svg class="mcp-stats-dist-svg" viewBox="0 0 100 100" role="img" aria-label="${escapeHtml(top6ShareLabel)} ${top6SharePct}%">
@@ -3817,7 +4267,7 @@ function renderMcpStatsInsightPanel(topTools, totals, activeToolFilter = '') {
                         </div>
                     </div>
                 </div>
-                <ul class="mcp-stats-dist-legend mcp-stats-dist-legend--grid">${legendHtml}</ul>
+                ${legendBlock}
             </div>
         </div>
     `;
@@ -3883,50 +4333,307 @@ function bindMonitorStatsPanelEvents() {
             clearMonitorToolFilter();
             return;
         }
-        const distEl = e.target.closest('.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name]');
-        if (distEl && distEl.getAttribute('data-is-others') !== '1') {
-            const tool = distEl.getAttribute('data-tool-name');
+        const filterEl = e.target.closest(
+            '.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name], ' +
+            '.mcp-stats-proportion-seg[data-tool-name], .mcp-stats-tool-item[data-tool-name], tr.mcp-stats-tool-row[data-tool-name]'
+        );
+        if (filterEl && filterEl.getAttribute('data-is-others') !== '1') {
+            const tool = filterEl.getAttribute('data-tool-name');
             if (tool) {
                 e.preventDefault();
                 handleMonitorStatsToolFilter(tool);
             }
             return;
         }
-        const row = e.target.closest('.mcp-stats-tool-row');
-        if (!row) return;
-        const tool = row.getAttribute('data-tool-name');
-        if (tool) {
-            e.preventDefault();
-            handleMonitorStatsToolFilter(tool);
-        }
     });
     root.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
-        const distSeg = e.target.closest('.mcp-stats-dist-segment[data-tool-name]');
-        if (!distSeg || distSeg.getAttribute('data-is-others') === '1') return;
-        const tool = distSeg.getAttribute('data-tool-name');
+        const filterEl = e.target.closest(
+            '.mcp-stats-dist-segment[data-tool-name], .mcp-stats-proportion-seg[data-tool-name], ' +
+            '.mcp-stats-tool-item[data-tool-name], tr.mcp-stats-tool-row[data-tool-name]'
+        );
+        if (!filterEl || filterEl.getAttribute('data-is-others') === '1') return;
+        const tool = filterEl.getAttribute('data-tool-name');
         if (tool) {
             e.preventDefault();
             handleMonitorStatsToolFilter(tool);
         }
     });
     root.addEventListener('mouseover', function (e) {
-        const el = e.target.closest('.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name]');
+        const el = e.target.closest(
+            '.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name], ' +
+            '.mcp-stats-proportion-seg[data-tool-name], .mcp-stats-tool-item[data-tool-name], tr.mcp-stats-tool-row[data-tool-name]'
+        );
         if (!el || el.getAttribute('data-is-others') === '1') return;
         const tool = el.getAttribute('data-tool-name');
         if (tool) setMcpStatsDistHover(tool);
     });
     root.addEventListener('mouseout', function (e) {
-        const el = e.target.closest('.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name]');
+        const el = e.target.closest(
+            '.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name], ' +
+            '.mcp-stats-proportion-seg[data-tool-name], .mcp-stats-tool-item[data-tool-name], tr.mcp-stats-tool-row[data-tool-name]'
+        );
         if (!el) return;
         const related = e.relatedTarget;
         const next = related && related.closest
-            ? related.closest('.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name]')
+            ? related.closest(
+                '.mcp-stats-dist-segment[data-tool-name], .mcp-stats-dist-legend-item[data-tool-name], ' +
+                '.mcp-stats-proportion-seg[data-tool-name], .mcp-stats-tool-item[data-tool-name], tr.mcp-stats-tool-row[data-tool-name]'
+            )
             : null;
         if (next) return;
         setMcpStatsDistHover('');
     });
     monitorStatsPanelEventsBound = true;
+}
+
+function renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText) {
+    const totalCallsLabel = mcpMonitorT('totalCalls') || '总调用次数';
+    const successRateLabel = mcpMonitorT('successRate') || '成功率';
+    const lastCallLabel = mcpMonitorT('lastCall') || '最近一次调用';
+    const successPill = mcpMonitorT('successCount', { n: totals.success }) || `成功 ${totals.success}`;
+    const failedPill = mcpMonitorT('failedCount', { n: totals.failed }) || `失败 ${totals.failed}`;
+
+    return `
+        <div class="mcp-stats-kpi" role="group" aria-label="${escapeHtml(totalCallsLabel)}">
+            <article class="mcp-stats-kpi__item mcp-stats-kpi__item--calls">
+                <span class="mcp-stats-kpi__accent" aria-hidden="true"></span>
+                <div class="mcp-stats-kpi__content">
+                    <span class="mcp-stats-kpi__label">${escapeHtml(totalCallsLabel)}</span>
+                    <span class="mcp-stats-kpi__value">${totals.total}</span>
+                    <div class="mcp-stats-kpi__meta">
+                        <span class="mcp-stats-kpi__chip is-ok">${escapeHtml(successPill)}</span>
+                        <span class="mcp-stats-kpi__chip is-fail">${escapeHtml(failedPill)}</span>
+                    </div>
+                </div>
+            </article>
+            <article class="mcp-stats-kpi__item mcp-stats-kpi__item--rate">
+                <span class="mcp-stats-kpi__accent" aria-hidden="true"></span>
+                <div class="mcp-stats-kpi__content">
+                    <span class="mcp-stats-kpi__label">${escapeHtml(successRateLabel)}</span>
+                    <span class="mcp-stats-kpi__value mcp-stats-kpi__value--rate ${rateTone}">${successRate}%</span>
+                    <span class="mcp-stats-kpi__status ${rateTone}">${escapeHtml(rateSubText)}</span>
+                </div>
+            </article>
+            <article class="mcp-stats-kpi__item mcp-stats-kpi__item--time">
+                <span class="mcp-stats-kpi__accent" aria-hidden="true"></span>
+                <div class="mcp-stats-kpi__content">
+                    <span class="mcp-stats-kpi__label">${escapeHtml(lastCallLabel)}</span>
+                    <time class="mcp-stats-kpi__value mcp-stats-kpi__value--time">${escapeHtml(lastCallText)}</time>
+                </div>
+            </article>
+        </div>`;
+}
+
+function renderMcpStatsToolTable(topTools, totals, activeToolFilter = '') {
+    const colTool = mcpMonitorT('columnTool') || '工具';
+    const colCalls = mcpMonitorT('columnCalls') || '调用';
+    const colShare = mcpMonitorT('columnShare') || '占比';
+    const colRate = mcpMonitorT('columnSuccessRate') || '成功率';
+    const unknownToolLabel = mcpMonitorT('unknownTool') || '未知工具';
+
+    let rowsHtml = '';
+    topTools.forEach((tool, index) => {
+        const name = tool.toolName || unknownToolLabel;
+        const total = tool.totalCalls || 0;
+        const success = tool.successCalls || 0;
+        const failed = tool.failedCalls || 0;
+        const toolRateNum = total > 0 ? (success / total) * 100 : 0;
+        const toolRate = toolRateNum.toFixed(1);
+        const sharePct = totals.total > 0 ? ((total / totals.total) * 100).toFixed(1) : '0.0';
+        const dotColor = MCP_STATS_DIST_COLORS[index % MCP_STATS_DIST_COLORS.length];
+        const isActive = activeToolFilter && activeToolFilter === name;
+        const rateClass = getMcpToolRateClass(toolRateNum);
+        const rankClass = index === 0 ? ' rank-1' : index === 1 ? ' rank-2' : index === 2 ? ' rank-3' : '';
+        const rowAria = mcpMonitorT('toolRowAriaLabel', { name, total, rate: toolRate })
+            || `${name}，${total} 次调用，成功率 ${toolRate}%`;
+        rowsHtml += `
+            <tr class="mcp-stats-tool-row${isActive ? ' is-active' : ''}"
+                data-tool-name="${escapeHtml(name)}"
+                tabindex="0"
+                role="button"
+                aria-label="${escapeHtml(rowAria)}"
+                aria-pressed="${isActive ? 'true' : 'false'}">
+                <td class="col-rank"><span class="mcp-stats-rank${rankClass}">${index + 1}</span></td>
+                <td class="col-tool" title="${escapeHtml(name)}">
+                    <span class="mcp-stats-tool-dot" style="background:${dotColor}" aria-hidden="true"></span>
+                    <span class="mcp-stats-tool-label">${escapeHtml(name)}</span>
+                </td>
+                <td class="col-num">${total}</td>
+                <td class="col-share">${sharePct}%</td>
+                <td class="col-rate">
+                    <span class="mcp-stats-rate ${rateClass}">${toolRate}%</span>
+                    ${failed > 0 ? `<span class="mcp-stats-fail-note">${escapeHtml(mcpMonitorT('failedCount', { n: failed }) || `失败 ${failed}`)}</span>` : ''}
+                </td>
+            </tr>`;
+    });
+
+    return `
+        <table class="mcp-stats-tool-table">
+            <thead>
+                <tr>
+                    <th class="col-rank" scope="col">#</th>
+                    <th class="col-tool" scope="col">${escapeHtml(colTool)}</th>
+                    <th class="col-num" scope="col">${escapeHtml(colCalls)}</th>
+                    <th class="col-share" scope="col">${escapeHtml(colShare)}</th>
+                    <th class="col-rate" scope="col">${escapeHtml(colRate)}</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>`;
+}
+
+/** MCP 合并面板左侧：堆叠占比条 + 工具排行列表（无饼图/表格套娃） */
+function renderMcpStatsToolsPanel(topTools, totals, activeToolFilter = '') {
+    const segments = buildMcpStatsChartSegments(topTools, totals, { groupSmall: false });
+    const topNTotal = topTools.reduce((s, t) => s + (t.totalCalls || 0), 0);
+    const topNSharePct = totals.total > 0 ? ((topNTotal / totals.total) * 100).toFixed(1) : '0.0';
+    const caption = mcpMonitorT('rankingSummary', { n: MCP_STATS_TOP_N, pct: topNSharePct, total: totals.total })
+        || `Top ${MCP_STATS_TOP_N} 占 ${topNSharePct}% · 共 ${totals.total} 次`;
+    const unknownToolLabel = mcpMonitorT('unknownTool') || '未知工具';
+    const colTool = mcpMonitorT('columnTool') || '工具';
+    const colCalls = mcpMonitorT('columnCalls') || '调用';
+    const colShare = mcpMonitorT('columnShare') || '占比';
+    const colRate = mcpMonitorT('columnSuccessRate') || '成功率';
+    const distAria = mcpMonitorT('distTitle') || '调用分布';
+
+    const stackedHtml = segments.map((s) => {
+        const isActive = !s.isOthers && activeToolFilter && activeToolFilter === s.name;
+        const title = `${s.name} · ${s.pct}% · ${s.calls}`;
+        if (s.isOthers) {
+            return `<span class="mcp-stats-proportion-seg is-others" data-is-others="1" role="presentation"
+                style="flex:${s.pctNum} 1 0;background:${s.color}" title="${escapeHtml(title)}"></span>`;
+        }
+        const segAria = mcpMonitorT('distSegmentAria', { name: s.name, pct: s.pct, calls: s.calls })
+            || `${s.name}，占 ${s.pct}%，${s.calls} 次`;
+        return `<span class="mcp-stats-proportion-seg${isActive ? ' is-active' : ''}"
+            data-tool-name="${escapeHtml(s.name)}" data-pct="${s.pct}" data-calls="${s.calls}" data-is-others="0"
+            role="button" tabindex="0" aria-label="${escapeHtml(segAria)}"
+            style="flex:${s.pctNum} 1 0;background:${s.color}" title="${escapeHtml(title)}"></span>`;
+    }).join('');
+
+    const maxCalls = Math.max(1, ...topTools.map((t) => t.totalCalls || 0));
+    const listHtml = topTools.map((tool, index) => {
+        const name = tool.toolName || unknownToolLabel;
+        const total = tool.totalCalls || 0;
+        const success = tool.successCalls || 0;
+        const failed = tool.failedCalls || 0;
+        const toolRateNum = total > 0 ? (success / total) * 100 : 0;
+        const toolRate = toolRateNum.toFixed(1);
+        const sharePct = totals.total > 0 ? ((total / totals.total) * 100).toFixed(1) : '0.0';
+        const color = MCP_STATS_DIST_COLORS[index % MCP_STATS_DIST_COLORS.length];
+        const barPct = maxCalls > 0 ? ((total / maxCalls) * 100).toFixed(1) : '0';
+        const isActive = activeToolFilter && activeToolFilter === name;
+        const rateClass = getMcpToolRateClass(toolRateNum);
+        const rankClass = index === 0 ? ' rank-1' : index === 1 ? ' rank-2' : index === 2 ? ' rank-3' : '';
+        const rowAria = mcpMonitorT('toolRowAriaLabel', { name, total, rate: toolRate })
+            || `${name}，${total} 次，成功率 ${toolRate}%`;
+        const failNote = failed > 0
+            ? `<span class="mcp-stats-tool-item__fail">${escapeHtml(mcpMonitorT('failedCount', { n: failed }) || `失败 ${failed}`)}</span>`
+            : '';
+        return `<li class="mcp-stats-tool-item${isActive ? ' is-active' : ''}"
+            data-tool-name="${escapeHtml(name)}" tabindex="0" role="button"
+            aria-label="${escapeHtml(rowAria)}" aria-pressed="${isActive ? 'true' : 'false'}">
+            <span class="mcp-stats-tool-item__rank mcp-stats-rank${rankClass}">${index + 1}</span>
+            <span class="mcp-stats-tool-item__dot" style="background:${color}" aria-hidden="true"></span>
+            <div class="mcp-stats-tool-item__body">
+                <span class="mcp-stats-tool-item__name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+                <span class="mcp-stats-tool-item__track" aria-hidden="true">
+                    <span class="mcp-stats-tool-item__fill" style="width:${barPct}%;background:${color}"></span>
+                </span>
+            </div>
+            <div class="mcp-stats-tool-item__metrics">
+                <span class="mcp-stats-tool-item__share">${sharePct}%</span>
+                <span class="mcp-stats-tool-item__calls">${total}</span>
+                <span class="mcp-stats-tool-item__rate ${rateClass}">${toolRate}%${failNote}</span>
+            </div>
+        </li>`;
+    }).join('');
+
+    return `
+        <div class="mcp-stats-tools-panel" role="region" aria-label="${escapeHtml(mcpMonitorT('toolStatsTitle') || '工具统计')}">
+            <div class="mcp-stats-tools-panel__hero">
+                <div class="mcp-stats-proportion-bar" role="img" aria-label="${escapeHtml(distAria)}">${stackedHtml}</div>
+                <p class="mcp-stats-tools-panel__caption">
+                    <span class="mcp-stats-scope-badge mcp-stats-scope-badge--cumulative mcp-stats-scope-badge--inline">${escapeHtml(mcpMonitorT('scopeCumulative') || '累计')}</span>
+                    ${escapeHtml(caption)}
+                </p>
+            </div>
+            <div class="mcp-stats-tools-panel__list-head" aria-hidden="true">
+                <span>#</span>
+                <span></span>
+                <span>${escapeHtml(colTool)}</span>
+                <span class="mcp-stats-tool-item__metrics-head">
+                    <span>${escapeHtml(colShare)}</span>
+                    <span>${escapeHtml(colCalls)}</span>
+                    <span>${escapeHtml(colRate)}</span>
+                </span>
+            </div>
+            <ol class="mcp-stats-tools-panel__list">${listHtml}</ol>
+        </div>`;
+}
+
+function renderMcpStatsChartAside(topTools, totals, activeToolFilter = '') {
+    const distTitle = mcpMonitorT('distTitle') || '调用分布';
+    const distClickHint = mcpMonitorT('distClickHint') || '点击扇区筛选';
+    const top6ShareLabel = mcpMonitorT('distTop6Share', { n: MCP_STATS_TOP_N }) || `Top ${MCP_STATS_TOP_N} 占全部调用`;
+    const topNTotal = topTools.reduce((s, t) => s + (t.totalCalls || 0), 0);
+    const top6SharePct = totals.total > 0 ? ((topNTotal / totals.total) * 100).toFixed(1) : '0.0';
+    const centerLabel = `Top ${MCP_STATS_TOP_N}`;
+
+    const segments = buildMcpStatsChartSegments(topTools, totals, { groupSmall: true });
+    const segmentPathsHtml = segments.map((s) => {
+        const pathD = mcpStatsDescribeDonutSegment(s.start, s.end, 48, 30);
+        if (!pathD) return '';
+        const isActive = !s.isOthers && activeToolFilter && activeToolFilter === s.name;
+        const segAria = s.isOthers
+            ? escapeHtml(s.name)
+            : escapeHtml(mcpMonitorT('distSegmentAria', { name: s.name, pct: s.pct, calls: s.calls })
+                || `${s.name}，占 ${s.pct}%，${s.calls} 次`);
+        return `<path class="mcp-stats-dist-segment${isActive ? ' is-active' : ''}${s.isOthers ? ' is-others' : ''}"
+            d="${pathD}" fill="${s.color}"
+            data-tool-name="${s.isOthers ? '' : escapeHtml(s.name)}"
+            data-pct="${s.pct}" data-calls="${s.calls}"
+            data-is-others="${s.isOthers ? '1' : '0'}"
+            tabindex="${s.isOthers ? '-1' : '0'}"
+            role="${s.isOthers ? 'presentation' : 'button'}"
+            aria-label="${segAria}" />`;
+    }).join('');
+
+    return `
+        <div class="mcp-stats-dist-panel mcp-stats-dist-panel--compact"
+            aria-label="${escapeHtml(distTitle)}"
+            data-center-label="${escapeHtml(centerLabel)}"
+            data-center-value="${top6SharePct}"
+            data-center-suffix="%">
+            <p class="mcp-stats-panel__aside-title">${escapeHtml(distTitle)}</p>
+            <div class="mcp-stats-panel__chart">
+                <svg class="mcp-stats-dist-svg" viewBox="0 0 100 100" role="img" aria-label="${escapeHtml(top6ShareLabel)} ${top6SharePct}%">
+                    <g class="mcp-stats-dist-segments">${segmentPathsHtml}</g>
+                </svg>
+                <div class="mcp-stats-dist-donut-hole" aria-hidden="true">
+                    <span class="mcp-stats-dist-donut-label is-default">${centerLabel}</span>
+                    <span class="mcp-stats-dist-donut-value">
+                        <span class="mcp-stats-dist-donut-value-num">${top6SharePct}</span>
+                        <span class="mcp-stats-dist-donut-unit">%</span>
+                    </span>
+                </div>
+            </div>
+            <p class="mcp-stats-panel__aside-hint">${escapeHtml(distClickHint)}</p>
+        </div>`;
+}
+
+function renderMcpStatsDetailSection(topTools, totals, activeToolFilter = '', timeline = null, timelineError = null) {
+    const showTimeline = timeline != null || !!timelineError;
+    return renderMcpStatsCombinedSection(topTools, totals, activeToolFilter, timeline, timelineError, showTimeline);
+}
+
+/** @deprecated 保留供其他页面；MCP 监控主面板请用 renderMcpStatsToolTable */
+function renderMcpStatsToolRanking(topTools, totals, activeToolFilter = '', options = {}) {
+    if (options.bare || options.embedded) {
+        return renderMcpStatsToolTable(topTools, totals, activeToolFilter);
+    }
+    return renderMcpStatsDetailSection(topTools, totals, activeToolFilter);
 }
 
 function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
@@ -3936,7 +4643,8 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     }
 
     const entries = normalizeMonitorStatsEntries(statsMap);
-    if (entries.length === 0) {
+    const showTimeline = monitorState.timeline != null || !!monitorState.timelineError;
+    if (entries.length === 0 && !showTimeline) {
         const noStats = mcpMonitorT('noStatsData') || '暂无统计数据';
         container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noStats) + '</div>';
         const subtitle = document.getElementById('monitor-stats-subtitle');
@@ -3966,12 +4674,6 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
         ? (totals.lastCallTime.toLocaleString ? totals.lastCallTime.toLocaleString(locale) : String(totals.lastCallTime))
         : noCallsYet;
 
-    const totalCallsLabel = mcpMonitorT('totalCalls') || '总调用次数';
-    const successRateLabel = mcpMonitorT('successRate') || '成功率';
-    const lastCallLabel = mcpMonitorT('lastCall') || '最近一次调用';
-    const statsFromAll = mcpMonitorT('statsFromAllTools') || '统计自全部工具调用';
-    const successPill = mcpMonitorT('successCount', { n: totals.success }) || `成功 ${totals.success}`;
-    const failedPill = mcpMonitorT('failedCount', { n: totals.failed }) || `失败 ${totals.failed}`;
     const rateTone = getMcpStatsRateTone(successRateNum);
     let rateSubText = mcpMonitorT('rateHealthy') || '运行平稳';
     if (successRateNum < 80) rateSubText = mcpMonitorT('rateCritical') || '失败率偏高';
@@ -3986,120 +4688,24 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
         .sort((a, b) => (b.totalCalls || 0) - (a.totalCalls || 0))
         .slice(0, MCP_STATS_TOP_N);
 
-    const maxToolCalls = topTools.length > 0 ? (topTools[0].totalCalls || 0) : 0;
-    const unknownToolLabel = mcpMonitorT('unknownTool') || '未知工具';
-    const topToolsTitle = mcpMonitorT('topToolsTitle', { n: MCP_STATS_TOP_N }) || `工具调用 Top ${MCP_STATS_TOP_N}`;
-    const toolsHint = mcpMonitorT('clickToFilterTool') || '点击行筛选下方执行记录';
-    const barLegend = mcpMonitorT('barVolumeLegend') || '条长表示相对调用量';
-    const successRateAria = mcpMonitorT('successRateAria', { rate: successRate }) || `成功率 ${successRate}%`;
-
-    const iconCalls = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-    const iconRate = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    const iconTime = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-
-    let toolRowsHtml = '';
-    topTools.forEach((tool, index) => {
-        const name = tool.toolName || unknownToolLabel;
-        const total = tool.totalCalls || 0;
-        const success = tool.successCalls || 0;
-        const failed = tool.failedCalls || 0;
-        const toolRateNum = total > 0 ? (success / total) * 100 : 0;
-        const toolRate = toolRateNum.toFixed(1);
-        const isActive = activeToolFilter && activeToolFilter === name;
-        const rowAria = mcpMonitorT('toolRowAriaLabel', { name, total, rate: toolRate })
-            || `${name}，${total} 次调用，成功率 ${toolRate}%`;
-        const rateClass = getMcpToolRateClass(toolRateNum);
-        toolRowsHtml += `
-            <li class="mcp-stats-tool-item">
-                <button type="button" class="mcp-stats-tool-row${isActive ? ' is-active' : ''}"
-                    data-tool-name="${escapeHtml(name)}"
-                    aria-label="${escapeHtml(rowAria)}"
-                    aria-pressed="${isActive ? 'true' : 'false'}">
-                    <span class="mcp-stats-tool-rank">${index + 1}</span>
-                    <div class="mcp-stats-tool-main">
-                        <div class="mcp-stats-tool-top">
-                            <span class="mcp-stats-tool-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-                            <span class="mcp-stats-tool-metrics">
-                                <span class="mcp-stats-tool-count">${total}</span>
-                                <span aria-hidden="true">·</span>
-                                <span class="mcp-stats-tool-rate ${rateClass}">${toolRate}%</span>
-                                ${failed > 0 ? `<span class="mcp-stats-tool-fail-badge">${escapeHtml(mcpMonitorT('failedCount', { n: failed }) || `失败 ${failed}`)}</span>` : ''}
-                            </span>
-                        </div>
-                        ${renderMcpStatsToolVolumeBar(total, success, failed, maxToolCalls)}
-                    </div>
-                    ${MCP_STATS_TOOL_CHEVRON}
-                </button>
-            </li>
-        `;
-    });
-
-    const clearFilterBtn = activeToolFilter
-        ? `<button type="button" class="mcp-stats-clear-filter">${escapeHtml(mcpMonitorT('clearToolFilter') || '清除工具筛选')}</button>`
-        : '';
-
+    const showCombined = showTimeline || topTools.length > 0;
     const html = `
         <div class="mcp-exec-stats">
-            <div class="mcp-stats-kpi-row">
-                <article class="mcp-stats-kpi-card mcp-stats-kpi-card--calls">
-                    <div class="mcp-stats-kpi-head">
-                        <span class="mcp-stats-kpi-label">${escapeHtml(totalCallsLabel)}</span>
-                        <span class="mcp-stats-kpi-icon mcp-stats-kpi-icon--calls" aria-hidden="true">${iconCalls}</span>
-                    </div>
-                    <div class="mcp-stats-kpi-value">${totals.total}</div>
-                    ${renderMcpStatsStackedBar(totals.success, totals.failed)}
-                    <div class="mcp-stats-kpi-sub">
-                        <span class="mcp-stats-pill mcp-stats-pill--success">${escapeHtml(successPill)}</span>
-                        <span class="mcp-stats-pill mcp-stats-pill--fail">${escapeHtml(failedPill)}</span>
-                    </div>
-                </article>
-                <article class="mcp-stats-kpi-card mcp-stats-kpi-card--rate">
-                    <div class="mcp-stats-kpi-head">
-                        <span class="mcp-stats-kpi-label">${escapeHtml(successRateLabel)}</span>
-                        <span class="mcp-stats-kpi-icon mcp-stats-kpi-icon--rate" aria-hidden="true">${iconRate}</span>
-                    </div>
-                    <div class="mcp-stats-kpi-body" role="img" aria-label="${escapeHtml(successRateAria)}">
-                        <div class="mcp-stats-kpi-value">${successRate}%</div>
-                        ${renderMcpStatsSuccessRing(successRate)}
-                    </div>
-                    <div class="mcp-stats-kpi-sub">
-                        <span class="mcp-stats-kpi-sub-text ${rateTone}">${escapeHtml(rateSubText)}</span>
-                        <span class="mcp-stats-kpi-sub-text">${escapeHtml(statsFromAll)}</span>
-                    </div>
-                </article>
-                <article class="mcp-stats-kpi-card mcp-stats-kpi-card--time">
-                    <div class="mcp-stats-kpi-head">
-                        <span class="mcp-stats-kpi-label">${escapeHtml(lastCallLabel)}</span>
-                        <span class="mcp-stats-kpi-icon mcp-stats-kpi-icon--time" aria-hidden="true">${iconTime}</span>
-                    </div>
-                    <div class="mcp-stats-kpi-value mcp-stats-kpi-value--time">${escapeHtml(lastCallText)}</div>
-                </article>
-            </div>
-            ${topTools.length > 0 ? `
-            <div class="mcp-stats-split">
-                <div class="mcp-stats-split-left">
-                    <div class="mcp-stats-tools-panel">
-                        <div class="mcp-stats-tools-header">
-                            <div class="mcp-stats-tools-heading">
-                                <h4 class="mcp-stats-tools-title">${escapeHtml(topToolsTitle)}</h4>
-                                <span class="mcp-stats-tools-legend">${escapeHtml(barLegend)}</span>
-                            </div>
-                            <span class="mcp-stats-tools-hint">${escapeHtml(toolsHint)}</span>
-                        </div>
-                        <ol class="mcp-stats-tool-list" aria-label="${escapeHtml(topToolsTitle)}">${toolRowsHtml}</ol>
-                        ${clearFilterBtn}
-                    </div>
-                </div>
-                <div class="mcp-stats-split-right">
-                    ${renderMcpStatsInsightPanel(topTools, totals, activeToolFilter)}
-                </div>
-            </div>
-            ` : ''}
+            ${renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText)}
+            ${showCombined ? renderMcpStatsCombinedSection(
+                topTools,
+                totals,
+                activeToolFilter,
+                monitorState.timeline,
+                monitorState.timelineError,
+                showTimeline
+            ) : ''}
         </div>
     `;
 
     container.innerHTML = html;
     bindMonitorStatsPanelEvents();
+    bindMcpStatsTimelineEvents();
     if (toolFilterEl && activeToolFilter) {
         toolFilterEl.classList.add('is-filter-active');
     } else if (toolFilterEl) {
