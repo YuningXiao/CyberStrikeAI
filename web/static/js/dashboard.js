@@ -21,6 +21,8 @@ var dashboardState = {
     lastUpdatedAt: 0,           // 上次成功刷新的时间戳（ms）
     dismissedAlertKey: null,    // 当前会话中被用户「×」掉的告警内容指纹（同样的 reasons 不再弹）
     lastResources: null,        // 上一轮关键资源快照，用于判断是否首次有数据 / 智能 CTA
+    recentFeedTab: 'vulns',     // 最近漏洞 / 近期事实 Tab
+    lastProjectSummary: null,   // 最近一次项目仪表盘摘要（供 Tab 切换时重绘）
 };
 
 async function refreshDashboard() {
@@ -57,6 +59,7 @@ async function refreshDashboard() {
         hideEl('dashboard-kpi-vuln-critical-badge');
         hideEl('dashboard-alert-banner');
         setRecentVulnsLoading();
+        setRecentFactsLoading();
         ['tools', 'skills', 'knowledge', 'roles', 'agents', 'webshell'].forEach(function (k) {
             setEl('dashboard-resource-' + k, '…');
         });
@@ -104,7 +107,8 @@ async function refreshDashboard() {
             openCriticalRes, openHighRes, openMediumRes, openLowRes, toolsConfigRes,
             hitlPendingRes, notificationsRes, externalMcpStatsRes,
             webshellRes,
-            c2ListenersRes, c2SessionsRes, c2TasksRes
+            c2ListenersRes, c2SessionsRes, c2TasksRes,
+            projectSummaryRes
         ] = await Promise.all([
             fetchJson('/api/agent-loop/tasks'),
             fetchJson('/api/vulnerabilities/stats'),
@@ -134,7 +138,8 @@ async function refreshDashboard() {
             // C2 仪表盘条：监听器 / 会话 / 待处理任务（任务接口含 pending_queued_count）
             fetchJson('/api/c2/listeners'),
             fetchJson('/api/c2/sessions?limit=500'),
-            fetchJson('/api/c2/tasks?page=1&page_size=1')
+            fetchJson('/api/c2/tasks?page=1&page_size=1'),
+            fetchJson('/api/projects/dashboard-summary?fact_limit=5')
         ]);
 
         // 如果在 await 期间 controller 已被 abort，说明又有新刷新启动了，丢弃本次结果
@@ -387,6 +392,9 @@ async function refreshDashboard() {
 
         // 最近漏洞列表
         renderRecentVulns(recentVulnsRes);
+        dashboardState.lastProjectSummary = projectSummaryRes;
+        renderRecentFacts(projectSummaryRes);
+        updateDashboardFeedTabBadge(projectSummaryRes);
 
         // External MCP 健康度（同时拿到 down 数喂给 alert banner / 推荐操作）
         var externalMcpDown = renderExternalMcpHealth(externalMcpStatsRes);
@@ -454,6 +462,7 @@ async function refreshDashboard() {
         var c2secErr = document.getElementById('dashboard-section-c2');
         if (c2secErr) c2secErr.hidden = true;
         setRecentVulnsError();
+        setRecentFactsError();
         renderDashboardToolsBar(null);
         var ph = document.getElementById('dashboard-tools-pie-placeholder');
         if (ph) { ph.style.removeProperty('display'); ph.textContent = (typeof window.t === 'function' ? window.t('dashboard.noCallData') : '暂无调用数据'); }
@@ -1126,6 +1135,215 @@ function renderRecentVulns(res) {
         const time = '<span class="dashboard-recent-vuln-time">' + esc(timeAgoStr(v.created_at)) + '</span>';
 
         item.innerHTML = severityBadge + title + target + statusPill + time;
+        wrap.appendChild(item);
+    });
+}
+
+// 最近漏洞 / 近期事实 Tab 切换（共用列表区域，查看全部链接随 Tab 变化）
+function switchDashboardFeedTab(tab) {
+    tab = tab === 'facts' ? 'facts' : 'vulns';
+    dashboardState.recentFeedTab = tab;
+
+    var tabVulns = document.getElementById('dashboard-feed-tab-vulns');
+    var tabFacts = document.getElementById('dashboard-feed-tab-facts');
+    var panelVulns = document.getElementById('dashboard-feed-panel-vulns');
+    var panelFacts = document.getElementById('dashboard-feed-panel-facts');
+    if (tabVulns) {
+        tabVulns.classList.toggle('is-active', tab === 'vulns');
+        tabVulns.setAttribute('aria-selected', tab === 'vulns' ? 'true' : 'false');
+    }
+    if (tabFacts) {
+        tabFacts.classList.toggle('is-active', tab === 'facts');
+        tabFacts.setAttribute('aria-selected', tab === 'facts' ? 'true' : 'false');
+    }
+    if (panelVulns) panelVulns.hidden = tab !== 'vulns';
+    if (panelFacts) panelFacts.hidden = tab !== 'facts';
+    updateDashboardFeedViewAll(tab);
+}
+
+function updateDashboardFeedViewAll(tab) {
+    var link = document.getElementById('dashboard-feed-view-all');
+    if (!link) return;
+    if (tab === 'facts') {
+        link.onclick = function () { try { switchPage('projects'); } catch (_) {} };
+    } else {
+        link.onclick = function () { try { switchPage('vulnerabilities'); } catch (_) {} };
+    }
+}
+
+function updateDashboardFeedTabBadge(summaryRes) {
+    var badge = document.getElementById('dashboard-feed-tab-facts-badge');
+    if (!badge) return;
+    var facts = (summaryRes && Array.isArray(summaryRes.recent_facts)) ? summaryRes.recent_facts.length : 0;
+    if (facts > 0) {
+        badge.hidden = false;
+        badge.textContent = '(' + facts + ')';
+    } else {
+        badge.hidden = true;
+        badge.textContent = '';
+    }
+}
+
+function setRecentFactsLoading() {
+    var wrap = document.getElementById('dashboard-recent-facts');
+    var empty = document.getElementById('dashboard-recent-facts-empty');
+    if (!wrap) return;
+    clearRecentFactsList(wrap);
+    if (empty) {
+        empty.hidden = false;
+        empty.classList.remove('is-rich');
+        empty.textContent = dt('common.loading', null, '加载中…');
+    }
+}
+
+function clearRecentFactsList(wrap) {
+    if (!wrap) return;
+    Array.from(wrap.querySelectorAll('.dashboard-recent-fact-item, .dashboard-recent-facts-meta')).forEach(function (n) { n.remove(); });
+}
+
+function setRecentFactsError() {
+    var wrap = document.getElementById('dashboard-recent-facts');
+    var empty = document.getElementById('dashboard-recent-facts-empty');
+    if (!wrap) return;
+    clearRecentFactsList(wrap);
+    if (empty) {
+        empty.hidden = false;
+        empty.classList.remove('is-rich');
+        empty.textContent = dt('common.loadFailed', null, '加载失败');
+    }
+}
+
+function factConfidenceShortLabel(confidence) {
+    var c = String(confidence || '').toLowerCase();
+    if (c === 'confirmed') return dt('projects.confidenceConfirmed', null, '已确认');
+    if (c === 'tentative') return dt('projects.confidenceTentative', null, '待确认');
+    return c || '—';
+}
+
+function factCategoryShortLabel(category) {
+    var raw = String(category || '').trim();
+    return raw || 'note';
+}
+
+function openProjectFactFromDashboard(projectId, factKey) {
+    if (!projectId) return;
+    if (typeof switchPage === 'function') {
+        switchPage('projects');
+    }
+    setTimeout(async function () {
+        if (typeof window.initProjectsPage === 'function') {
+            await window.initProjectsPage();
+        }
+        if (typeof window.selectProject === 'function') {
+            await window.selectProject(projectId);
+        }
+        if (typeof window.switchProjectTab === 'function') {
+            window.switchProjectTab('facts');
+        }
+        if (factKey && typeof window.viewProjectFactBody === 'function') {
+            window.viewProjectFactBody(factKey);
+        }
+    }, 350);
+}
+
+function renderRecentFacts(res) {
+    var wrap = document.getElementById('dashboard-recent-facts');
+    var empty = document.getElementById('dashboard-recent-facts-empty');
+    if (!wrap) return;
+
+    clearRecentFactsList(wrap);
+
+    var list = (res && Array.isArray(res.recent_facts)) ? res.recent_facts : [];
+    var totals = (res && res.totals) ? res.totals : {};
+    var activeProjects = totals.active_projects || 0;
+    var totalFacts = totals.total_facts || 0;
+
+    if (list.length === 0) {
+        if (empty) {
+            empty.hidden = false;
+            empty.classList.add('is-rich');
+            var desc = activeProjects > 0
+                ? dt('dashboard.noFactsDesc', null, '在绑定项目的对话中，Agent 会自动记录目标、漏洞、攻击链等事实；新事实会出现在这里')
+                : dt('projects.selectOrCreateHint', null, '项目用于跨对话共享「事实黑板」：目标、环境、认证等信息会在绑定项目的对话中自动注入。');
+            var ctaLabel = activeProjects > 0
+                ? dt('dashboard.goToChat', null, '前往对话')
+                : dt('dashboard.createFirstProjectBtn', null, '创建第一个项目');
+            var ctaAction = activeProjects > 0 ? 'chat' : 'project';
+            empty.innerHTML = (
+                '<span class="dashboard-empty-icon" aria-hidden="true">' +
+                '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="12" y1="6" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+                '</span>' +
+                '<div class="dashboard-empty-title">' + esc(dt('dashboard.noFactsYet', null, '暂无近期事实')) + '</div>' +
+                '<div class="dashboard-empty-desc">' + esc(desc) + '</div>' +
+                '<button type="button" class="dashboard-empty-action" data-action="' + esc(ctaAction) + '">' +
+                esc(ctaLabel) + ' →</button>'
+            );
+            var btn = empty.querySelector('[data-action]');
+            if (btn) {
+                btn.onclick = function () {
+                    var action = btn.getAttribute('data-action');
+                    if (action === 'project') {
+                        try { switchPage('projects'); } catch (_) {}
+                        setTimeout(function () {
+                            if (typeof window.showNewProjectModal === 'function') {
+                                window.showNewProjectModal();
+                            }
+                        }, 350);
+                    } else {
+                        try { switchPage('chat'); } catch (_) {}
+                    }
+                };
+            }
+        }
+        return;
+    }
+
+    if (empty) {
+        empty.hidden = true;
+        empty.classList.remove('is-rich');
+    }
+
+    if (activeProjects > 0 || totalFacts > 0) {
+        var meta = document.createElement('div');
+        meta.className = 'dashboard-recent-facts-meta';
+        meta.textContent = dt('dashboard.factsAcrossProjects', { count: activeProjects, facts: totalFacts },
+            activeProjects + ' 个活跃项目 · ' + totalFacts + ' 条事实');
+        wrap.appendChild(meta);
+    }
+
+    list.slice(0, 5).forEach(function (f) {
+        if (!f) return;
+        var category = factCategoryShortLabel(f.category);
+        var confidence = String(f.confidence || 'tentative').toLowerCase();
+        var item = document.createElement('a');
+        item.className = 'dashboard-recent-fact-item';
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        var pid = f.project_id || '';
+        var fkey = f.fact_key || '';
+        item.onclick = function () { openProjectFactFromDashboard(pid, fkey); };
+        item.onkeydown = function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                item.click();
+            }
+        };
+
+        // 置顶列始终占位，避免有/无图钉时后续列错位
+        var pinMark = '<span class="dashboard-recent-fact-pin' + (f.pinned ? ' is-pinned' : '') + '"' +
+            (f.pinned ? (' title="' + esc(dt('projects.pinned', null, '置顶')) + '"') : '') +
+            ' aria-hidden="true">' + (f.pinned ? '📌' : '') + '</span>';
+        var categoryBadge = '<span class="dashboard-recent-fact-cat cat-' + esc(category.toLowerCase().replace(/[^a-z0-9_-]/g, '')) + '">' + esc(category) + '</span>';
+        var confBadge = '<span class="dashboard-recent-fact-conf conf-' + esc(confidence) + '">' + esc(factConfidenceShortLabel(confidence)) + '</span>';
+        var summary = '<span class="dashboard-recent-fact-summary" title="' + esc(f.summary || '') + '">' + esc(f.summary || dt('common.untitled', null, '无标题')) + '</span>';
+        // 勿用 i18n 插值拼接 fact_key：i18next 会把 / 转成 &#x2F; 导致乱码
+        var projectLabel = (f.project_name || '').trim() || dt('projects.defaultProjectName', null, '项目');
+        var factKeyLabel = (f.fact_key || '').trim() || '—';
+        var metaText = projectLabel + ' · ' + factKeyLabel;
+        var metaLine = '<span class="dashboard-recent-fact-meta" title="' + esc(metaText) + '">' + esc(metaText) + '</span>';
+        var time = '<span class="dashboard-recent-fact-time">' + esc(timeAgoStr(f.updated_at)) + '</span>';
+
+        item.innerHTML = pinMark + categoryBadge + confBadge + summary + metaLine + time;
         wrap.appendChild(item);
     });
 }

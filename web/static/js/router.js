@@ -56,8 +56,9 @@ function initRouter() {
     const hash = window.location.hash.slice(1);
     if (hash) {
         const hashParts = hash.split('?');
-        const pageId = hashParts[0];
-        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        let pageId = hashParts[0];
+        if (pageId === 'c2') pageId = 'c2-listeners';
+        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(500);
@@ -464,7 +465,6 @@ async function initPage(pageId) {
                 loadMarkdownAgents();
             }
             break;
-        case 'c2':
         case 'c2-listeners':
         case 'c2-sessions':
         case 'c2-tasks':
@@ -494,9 +494,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const hash = window.location.hash.slice(1);
         // 处理带参数的hash（如 chat?conversation=xxx）
         const hashParts = hash.split('?');
-        const pageId = hashParts[0];
+        let pageId = hashParts[0];
         
-        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'tasks', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId === 'c2') pageId = 'c2-listeners';
+        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'tasks', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(200);

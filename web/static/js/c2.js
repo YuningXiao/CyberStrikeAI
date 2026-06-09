@@ -321,7 +321,6 @@
         }
 
         switch(pageId) {
-            case 'c2':
             case 'c2-listeners':
                 C2.loadListeners();
                 break;
@@ -370,7 +369,6 @@
                 C2.profiles = pdata.profiles;
             }
             C2.renderListeners();
-            C2.updateDashboardStats();
         });
     };
 
@@ -736,7 +734,6 @@
         return apiRequest('GET', `${API_BASE}/sessions`).then(data => {
             C2.sessions = data.sessions || [];
             C2.renderSessions();
-            C2.updateDashboardStats();
         });
     };
 
@@ -2037,7 +2034,6 @@
             C2.renderTasks();
             C2.renderTasksPagination();
             C2.syncTasksToolbar();
-            C2.updateDashboardStats();
         }).catch(err => {
             showToast(err.message || String(err), 'error');
         });
@@ -2163,7 +2159,6 @@
             const tasks = data.tasks || [];
             if (typeof data.pending_queued_count === 'number') {
                 C2.tasksPendingQueuedCount = data.pending_queued_count;
-                C2.updateDashboardStats();
             }
             
             if (!container) return;
@@ -2819,7 +2814,6 @@
             showToast(`[${event.category}] ${event.message}`, event.level === 'critical' ? 'error' : 'info');
         }
 
-        C2.updateDashboardStats();
     };
 
     // ============================================================================
@@ -2951,26 +2945,6 @@
             showToast(c2t('c2.profiles.toastDeleted'), 'success');
             C2.loadProfiles();
         });
-    };
-
-    // ============================================================================
-    // 仪表盘
-    // ============================================================================
-
-    C2.updateDashboardStats = function() {
-        const runningListeners = C2.listeners.filter(l => l.status === 'running').length;
-        const activeSessions = C2.sessions.filter(s => s.status === 'active').length;
-        const pendingTasks = typeof C2.tasksPendingQueuedCount === 'number'
-            ? C2.tasksPendingQueuedCount
-            : C2.tasks.filter(t => t.status === 'queued' || t.status === 'pending').length;
-
-        const elListeners = document.getElementById('c2-stat-listeners');
-        const elSessions = document.getElementById('c2-stat-sessions');
-        const elPending = document.getElementById('c2-stat-pending');
-
-        if (elListeners) elListeners.textContent = runningListeners;
-        if (elSessions) elSessions.textContent = activeSessions;
-        if (elPending) elPending.textContent = pendingTasks;
     };
 
     // ============================================================================

@@ -221,7 +221,6 @@
                             </svg>
                         </div>
                         <div class="nav-submenu" id="submenu-c2">
-                            <div class="nav-submenu-item" data-page="c2" onclick="switchPage('c2')" data-i18n="nav.c2Manage">C2 管理</div>
                             <div class="nav-submenu-item" data-page="c2-listeners" onclick="switchPage('c2-listeners')" data-i18n="nav.c2Listeners">监听器</div>
                             <div class="nav-submenu-item" data-page="c2-sessions" onclick="switchPage('c2-sessions')" data-i18n="nav.c2Sessions">会话</div>
                             <div class="nav-submenu-item" data-page="c2-tasks" onclick="switchPage('c2-tasks')" data-i18n="nav.c2Tasks">任务</div>
@@ -574,20 +573,30 @@
                                             </div>
                                         </div>
                                     </section>
-                                    <section class="dashboard-section dashboard-section-recent-vulns">
-                                        <div class="dashboard-section-header">
-                                            <h3 class="dashboard-section-title" data-i18n="dashboard.recentVulns">最近漏洞</h3>
-                                            <a class="dashboard-section-link" onclick="switchPage('vulnerabilities')" data-i18n="dashboard.viewAll">查看全部 →</a>
+                                    <section class="dashboard-section dashboard-section-recent-feed">
+                                        <div class="dashboard-section-header dashboard-section-header--tabs">
+                                            <nav class="dashboard-feed-tabs" role="tablist" aria-label="最近漏洞与近期事实">
+                                                <button type="button" class="dashboard-feed-tab is-active" role="tab" id="dashboard-feed-tab-vulns" aria-selected="true" aria-controls="dashboard-feed-panel-vulns" onclick="switchDashboardFeedTab('vulns')" data-i18n="dashboard.recentVulns">最近漏洞</button>
+                                                <button type="button" class="dashboard-feed-tab" role="tab" id="dashboard-feed-tab-facts" aria-selected="false" aria-controls="dashboard-feed-panel-facts" onclick="switchDashboardFeedTab('facts')"><span data-i18n="dashboard.recentFacts">近期事实</span><span class="dashboard-feed-tab-badge" id="dashboard-feed-tab-facts-badge" hidden></span></button>
+                                            </nav>
+                                            <a class="dashboard-section-link" id="dashboard-feed-view-all" onclick="switchPage('vulnerabilities')" data-i18n="dashboard.viewAll">查看全部 →</a>
                                         </div>
-                                        <div class="dashboard-recent-vulns" id="dashboard-recent-vulns">
-                                            <div class="dashboard-recent-vulns-empty" id="dashboard-recent-vulns-empty" data-i18n="dashboard.noVulnYet">暂无最近漏洞</div>
+                                        <div class="dashboard-feed-panel" id="dashboard-feed-panel-vulns" role="tabpanel" aria-labelledby="dashboard-feed-tab-vulns">
+                                            <div class="dashboard-recent-vulns" id="dashboard-recent-vulns">
+                                                <div class="dashboard-recent-vulns-empty" id="dashboard-recent-vulns-empty" data-i18n="dashboard.noVulnYet">暂无最近漏洞</div>
+                                            </div>
+                                        </div>
+                                        <div class="dashboard-feed-panel" id="dashboard-feed-panel-facts" role="tabpanel" aria-labelledby="dashboard-feed-tab-facts" hidden>
+                                            <div class="dashboard-recent-facts" id="dashboard-recent-facts">
+                                                <div class="dashboard-recent-facts-empty" id="dashboard-recent-facts-empty" data-i18n="dashboard.noFactsYet">暂无近期事实</div>
+                                            </div>
                                         </div>
                                     </section>
                                     <!-- C2 概览：介于「最近漏洞」与「批量任务队列」之间 -->
                                     <section class="dashboard-section dashboard-section-c2" id="dashboard-section-c2" hidden>
                                         <div class="dashboard-section-header">
                                             <h3 class="dashboard-section-title" data-i18n="dashboard.c2OverviewTitle">C2 概览</h3>
-                                            <a class="dashboard-section-link" onclick="switchPage('c2')" data-i18n="dashboard.c2GoManage">进入 C2 →</a>
+                                            <a class="dashboard-section-link" onclick="switchPage('c2-listeners')" data-i18n="dashboard.c2GoManage">进入 C2 →</a>
                                         </div>
                                         <div class="dashboard-c2-strip">
                                             <div class="dashboard-c2-stat" role="button" tabindex="0" onclick="switchPage('c2-listeners')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('c2-listeners'); }" data-i18n="dashboard.c2ClickListeners" data-i18n-attr="title" title="查看监听器">
@@ -2000,51 +2009,6 @@
                             <div class="batch-queues-board">
                                 <div id="batch-queues-list" class="batch-queues-list"></div>
                                 <div id="batch-queues-pagination" class="pagination-container"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- C2 管理页面容器（各子页面通过 JS 动态渲染） -->
-                <div id="page-c2" class="page">
-                    <div class="page-header">
-                        <h2 data-i18n="c2.title">C2 管理</h2>
-                    </div>
-                    <div class="page-content" id="c2-content">
-                        <div class="c2-layout">
-                            <div id="c2-main" class="c2-main">
-                                <div class="c2-welcome">
-                                    <div class="c2-welcome-icon">
-                                        <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="url(#c2-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <defs><linearGradient id="c2-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs>
-                                            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path>
-                                            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path>
-                                            <circle cx="12" cy="12" r="2"></circle>
-                                            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path>
-                                            <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19"></path>
-                                        </svg>
-                                    </div>
-                                    <h3 data-i18n="c2.welcomeTitle">AI-Native C2 框架</h3>
-                                    <p data-i18n="c2.welcomeDesc">以 MCP 工具为一等公民，让 LLM 可以像调用 nmap 一样调用 C2 完成"上线 → 控制 → 任务 → 横向 → 清场"全流程</p>
-                                    <div class="c2-stats" id="c2-dashboard-stats">
-                                        <div class="c2-stat-item">
-                                            <span class="c2-stat-value" id="c2-stat-listeners">-</span>
-                                            <span class="c2-stat-label" data-i18n="c2.statListeners">运行中监听器</span>
-                                        </div>
-                                        <div class="c2-stat-item">
-                                            <span class="c2-stat-value" id="c2-stat-sessions">-</span>
-                                            <span class="c2-stat-label" data-i18n="c2.statSessions">在线会话</span>
-                                        </div>
-                                        <div class="c2-stat-item">
-                                            <span class="c2-stat-value" id="c2-stat-pending">-</span>
-                                            <span class="c2-stat-label" data-i18n="c2.statPending">待审任务</span>
-                                        </div>
-                                    </div>
-                                    <div class="c2-actions">
-                                        <button class="btn-primary" onclick="switchPage('c2-listeners')" data-i18n="c2.goListeners">管理监听器</button>
-                                        <button class="btn-secondary" onclick="switchPage('c2-sessions')" data-i18n="c2.goSessions">查看会话</button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -4259,6 +4223,11 @@
                     </div>
                     <textarea id="fact-modal-body" class="form-input fact-modal-body-input" rows="14" placeholder="攻击链步骤、HTTP/命令 POC、响应现象、证据…" oninput="updateFactFormHints()"></textarea>
                     <p id="fact-modal-body-hint" class="projects-field-hint" role="status"></p>
+                </div>
+                <div class="projects-form-field">
+                    <label class="projects-filter-check projects-pin-toggle">
+                        <input type="checkbox" id="fact-modal-pinned"> <span data-i18n="projects.pinFact">置顶事实（列表与黑板索引优先）</span>
+                    </label>
                 </div>
                 <div class="projects-form-field">
                     <label for="fact-modal-related-vuln" data-i18n="projects.relatedVulnIdLabel">关联漏洞 ID</label>

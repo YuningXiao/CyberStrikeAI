@@ -15971,6 +15971,255 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     transform: translateX(2px);
 }
 
+/* 最近漏洞 / 近期事实 Tab */
+.dashboard-section-header--tabs {
+    align-items: center;
+    gap: 12px;
+}
+
+.dashboard-feed-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    background: #f1f5f9;
+    border-radius: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-feed-tab {
+    padding: 7px 14px;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.2;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.dashboard-feed-tab:hover {
+    color: #0f172a;
+}
+
+.dashboard-feed-tab.is-active {
+    color: #0066ff;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.dashboard-feed-tab-badge {
+    margin-left: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-feed-tab.is-active .dashboard-feed-tab-badge {
+    color: #0066ff;
+}
+
+.dashboard-feed-tab:focus-visible {
+    outline: 2px solid rgba(0, 102, 255, 0.45);
+    outline-offset: 2px;
+}
+
+.dashboard-feed-panel[hidden] {
+    display: none !important;
+}
+
+.dashboard-recent-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 60px;
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+}
+
+.dashboard-recent-facts-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 28px 12px;
+    font-size: 0.875rem;
+    background: #fafbfc;
+    border-radius: 10px;
+    border: 1px dashed rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-recent-facts-empty.is-rich {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px;
+    text-align: center;
+    gap: 8px;
+}
+
+.dashboard-recent-facts-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #6b7280);
+    padding: 2px 4px 8px;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-recent-fact-item {
+    display: grid;
+    /* 置顶 / 分类 / 置信度 固定列宽，保证各行对齐 */
+    grid-template-columns: 20px 64px 56px minmax(0, 1.4fr) minmax(0, 1fr) 9.5rem;
+    align-items: center;
+    column-gap: 10px;
+    padding: 12px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-decoration: none;
+    color: inherit;
+    border-bottom: 1px solid #f3f4f6;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.dashboard-recent-fact-item:last-child {
+    border-bottom: none;
+}
+
+.dashboard-recent-fact-item:hover {
+    background: rgba(0, 102, 255, 0.04);
+}
+
+.dashboard-recent-fact-item:focus-visible {
+    outline: 2px solid rgba(0, 102, 255, 0.5);
+    outline-offset: 2px;
+}
+
+.dashboard-recent-fact-pin {
+    width: 20px;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    line-height: 1;
+    text-align: center;
+    justify-self: center;
+}
+
+.dashboard-recent-fact-cat,
+.dashboard-recent-fact-conf {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    justify-self: start;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dashboard-recent-fact-cat {
+    width: 64px;
+    box-sizing: border-box;
+}
+
+.dashboard-recent-fact-conf {
+    width: 56px;
+    box-sizing: border-box;
+}
+
+.dashboard-recent-fact-cat {
+    background: rgba(99, 102, 241, 0.1);
+    color: #4338ca;
+}
+
+.dashboard-recent-fact-cat.cat-finding,
+.dashboard-recent-fact-cat.cat-vuln,
+.dashboard-recent-fact-cat.cat-exploit,
+.dashboard-recent-fact-cat.cat-poc,
+.dashboard-recent-fact-cat.cat-chain {
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+}
+
+.dashboard-recent-fact-cat.cat-target,
+.dashboard-recent-fact-cat.cat-env,
+.dashboard-recent-fact-cat.cat-auth {
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+}
+
+.dashboard-recent-fact-conf.conf-confirmed {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+}
+
+.dashboard-recent-fact-conf.conf-tentative {
+    background: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+}
+
+.dashboard-recent-fact-summary {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dashboard-recent-fact-meta {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.dashboard-recent-fact-time {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-align: left;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+    .dashboard-recent-fact-item {
+        grid-template-columns: 20px 64px minmax(0, 1fr) auto 8.25rem;
+    }
+    .dashboard-recent-fact-conf { display: none; }
+}
+
+@media (max-width: 720px) {
+    .dashboard-recent-fact-item {
+        grid-template-columns: 20px 64px minmax(0, 1fr) auto;
+    }
+    .dashboard-recent-fact-meta { display: none; }
+}
+
+@media (max-width: 480px) {
+    .dashboard-recent-fact-item {
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+    }
+    .dashboard-recent-fact-cat { display: none; }
+    .dashboard-recent-fact-time { display: none; }
+}
+
 /* 最近漏洞列表 */
 .dashboard-recent-vulns {
     display: flex;

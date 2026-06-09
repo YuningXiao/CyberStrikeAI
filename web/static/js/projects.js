@@ -574,8 +574,11 @@ async function loadProjectFacts() {
         const vulnLink = f.related_vulnerability_id
             ? `<span class="projects-fact-vuln-link" title="${escapeHtml(tp('projects.relatedVulnIdTitle'))}">${escapeHtml(f.related_vulnerability_id.slice(0, 8))}…</span>`
             : '';
+        const pinBadge = f.pinned
+            ? `<span class="projects-list-item-badge" title="${escapeHtml(tp('projects.pinned'))}">${escapeHtml(tp('projects.pinned'))}</span>`
+            : '';
         return `<tr>
-            <td class="cell-fact-key"><code class="projects-fact-key-chip" title="${keyEsc}">${keyEsc}</code>${vulnLink}</td>
+            <td class="cell-fact-key"><code class="projects-fact-key-chip" title="${keyEsc}">${keyEsc}</code>${pinBadge}${vulnLink}</td>
             <td class="cell-fact-category">${formatCategoryBadge(f.category)}</td>
             <td class="cell-summary" title="${escapeHtml(f.summary)}">${escapeHtml(f.summary)}</td>
             <td>${formatFactBodyBadge(f)}</td>
@@ -1165,6 +1168,8 @@ function resetFactModalForm() {
     document.getElementById('fact-modal-summary').value = '';
     document.getElementById('fact-modal-body').value = '';
     document.getElementById('fact-modal-confidence').value = 'tentative';
+    const pinEl = document.getElementById('fact-modal-pinned');
+    if (pinEl) pinEl.checked = false;
     const rel = document.getElementById('fact-modal-related-vuln');
     if (rel) rel.value = '';
     updateFactFormHints();
@@ -1198,6 +1203,8 @@ function fillFactModalForm(f) {
     }
     const rel = document.getElementById('fact-modal-related-vuln');
     if (rel) rel.value = f.related_vulnerability_id || '';
+    const pinEl = document.getElementById('fact-modal-pinned');
+    if (pinEl) pinEl.checked = !!f.pinned;
     updateFactFormHints();
 }
 
@@ -1242,6 +1249,7 @@ async function saveFactModal() {
         summary,
         body,
         confidence: document.getElementById('fact-modal-confidence').value,
+        pinned: !!document.getElementById('fact-modal-pinned')?.checked,
         related_vulnerability_id: document.getElementById('fact-modal-related-vuln')?.value?.trim() || '',
     };
     const editId = window._factModalEditId;
