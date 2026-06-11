@@ -638,18 +638,126 @@ function mergeStreamBuffer(current, delta, data) {
 if (typeof window !== 'undefined') {
     window.streamBufferFromAccumulated = streamBufferFromAccumulated;
     window.mergeStreamBuffer = mergeStreamBuffer;
+    window.processSseDataLinesYielding = processSseDataLinesYielding;
+    window.flushStreamPlainTextUpdate = flushStreamPlainTextUpdate;
+    window.scheduleStreamPlainTextUpdate = scheduleStreamPlainTextUpdate;
+}
+
+/** 流式纯文本 DOM：按帧合并更新，尽量增量 appendData，避免每条 SSE 全量 textContent 阻塞主线程 */
+const streamPlainDomState = new WeakMap();
+/** 跟踪仍有待刷新的流式节点，便于快照时间线前一次性 flush */
+const streamPlainDomPendingElements = new Set();
+
+function applyStreamPlainTextNow(contentEl, text, state) {
+    if (!contentEl) return;
+    const full = text == null ? '' : String(text);
+    const prevLen = state && state.renderedLen ? state.renderedLen : 0;
+    contentEl.classList.add('timeline-stream-plain');
+
+    if (full.length > prevLen && contentEl.childNodes.length === 1 &&
+        contentEl.firstChild && contentEl.firstChild.nodeType === Node.TEXT_NODE) {
+        const existing = contentEl.firstChild.nodeValue || '';
+        if (existing.length === prevLen && full.startsWith(existing)) {
+            const delta = full.slice(prevLen);
+            if (delta) {
+                contentEl.firstChild.appendData(delta);
+                if (state) {
+                    state.renderedLen = full.length;
+                    state.pendingText = full;
+                }
+                return;
+            }
+        }
+    }
+
+    contentEl.textContent = full;
+    if (state) {
+        state.renderedLen = full.length;
+        state.pendingText = full;
+    }
+}
+
+function flushStreamPlainTextUpdate(contentEl) {
+    if (!contentEl) return;
+    const state = streamPlainDomState.get(contentEl);
+    if (!state) return;
+    if (state.rafId) {
+        cancelAnimationFrame(state.rafId);
+        state.rafId = 0;
+    }
+    applyStreamPlainTextNow(contentEl, state.pendingText, state);
+}
+
+function scheduleStreamPlainTextUpdate(contentEl, text) {
+    if (!contentEl) return;
+    const full = text == null ? '' : String(text);
+    let state = streamPlainDomState.get(contentEl);
+    if (!state) {
+        state = { pendingText: full, rafId: 0, renderedLen: 0 };
+        streamPlainDomState.set(contentEl, state);
+    } else {
+        state.pendingText = full;
+    }
+    streamPlainDomPendingElements.add(contentEl);
+    if (state.rafId) return;
+    state.rafId = requestAnimationFrame(function () {
+        state.rafId = 0;
+        applyStreamPlainTextNow(contentEl, state.pendingText, state);
+    });
+}
+
+function resetStreamPlainTextState(contentEl) {
+    if (!contentEl) return;
+    const state = streamPlainDomState.get(contentEl);
+    if (state && state.rafId) {
+        cancelAnimationFrame(state.rafId);
+    }
+    streamPlainDomState.delete(contentEl);
+    streamPlainDomPendingElements.delete(contentEl);
+}
+
+function flushAllPendingStreamPlainUpdates() {
+    streamPlainDomPendingElements.forEach(function (el) {
+        if (el && el.isConnected) {
+            flushStreamPlainTextUpdate(el);
+        }
+    });
 }
 
 /** 流式 delta：纯文本，避免每条全量 marked + DOMPurify */
 function setTimelineItemContentStreamPlain(contentEl, text) {
     if (!contentEl) return;
-    contentEl.classList.add('timeline-stream-plain');
-    contentEl.textContent = text == null ? '' : String(text);
+    resetStreamPlainTextState(contentEl);
+    applyStreamPlainTextNow(contentEl, text, null);
+}
+
+/**
+ * 分批处理 SSE data 行并在批间让出主线程，避免单次 read() 内数百条事件连续阻塞 UI。
+ * @param {string[]} lines
+ * @param {(event: object) => void} onEvent
+ * @param {{ yieldEvery?: number }} [options]
+ */
+async function processSseDataLinesYielding(lines, onEvent, options) {
+    const yieldEvery = (options && options.yieldEvery) || 32;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith('data: ')) {
+            try {
+                onEvent(JSON.parse(line.slice(6)));
+            } catch (e) {
+                console.error('解析事件数据失败:', e, line);
+            }
+        }
+        if ((i + 1) % yieldEvery === 0 && i + 1 < lines.length) {
+            await new Promise(function (resolve) { requestAnimationFrame(resolve); });
+        }
+    }
 }
 
 /** 流结束或非流式：富文本（已消毒的 HTML 字符串） */
 function setTimelineItemContentStreamRich(contentEl, html) {
     if (!contentEl) return;
+    resetStreamPlainTextState(contentEl);
     contentEl.classList.remove('timeline-stream-plain');
     contentEl.innerHTML = html;
 }
@@ -1053,6 +1161,9 @@ function getAssistantId() {
 function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecutionIds) {
     const progressElement = document.getElementById(progressId);
     if (!progressElement) return;
+
+    // 快照 innerHTML 前刷掉尚未执行的 rAF 流式更新，避免过程详情少最后几帧
+    flushAllPendingStreamPlainUpdates();
 
     // Ensure any "running" tool_call badges are closed before we snapshot timeline HTML.
     // Otherwise, once the progress element is removed, later 'done' events may not be able
@@ -1668,7 +1779,7 @@ function handleStreamEvent(event, progressElement, progressId,
             if (item) {
                 const contentEl = item.querySelector('.timeline-item-content');
                 if (contentEl) {
-                    setTimelineItemContentStreamPlain(contentEl, s.buffer);
+                    scheduleStreamPlainTextUpdate(contentEl, s.buffer);
                 }
             }
             break;
@@ -1688,6 +1799,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     if (item) {
                         const contentEl = item.querySelector('.timeline-item-content');
                         if (contentEl) {
+                            flushStreamPlainTextUpdate(contentEl);
                             if (typeof formatMarkdown === 'function') {
                                 setTimelineItemContentStreamRich(contentEl, formatMarkdown(s.buffer, timelineMarkdownOpts));
                             } else {
@@ -1914,7 +2026,7 @@ function handleStreamEvent(event, progressElement, progressId,
                 const pre = item.querySelector('pre.tool-result');
                 if (pre) {
                     pre.classList.remove('tool-result-pending');
-                    pre.textContent = state.buffer;
+                    scheduleStreamPlainTextUpdate(pre, state.buffer);
                 }
             }
             break;
@@ -2021,7 +2133,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     }
                 }
                 if (contentEl) {
-                    setTimelineItemContentStreamPlain(contentEl, s.buffer);
+                    scheduleStreamPlainTextUpdate(contentEl, s.buffer);
                 }
             }
             break;
@@ -2048,6 +2160,7 @@ function handleStreamEvent(event, progressElement, progressId,
                         contentEl.className = 'timeline-item-content';
                         item.appendChild(contentEl);
                     }
+                    flushStreamPlainTextUpdate(contentEl);
                     if (typeof formatMarkdown === 'function') {
                         setTimelineItemContentStreamRich(contentEl, formatMarkdown(full, timelineMarkdownOpts));
                     } else {
@@ -2224,15 +2337,13 @@ function handleStreamEvent(event, progressElement, progressId,
             if (!deltaContent && streamBufferFromAccumulated(responseData) === null) break;
             state.buffer = mergeStreamBuffer(state.buffer, deltaContent, responseData);
 
-            // 更新时间线条目内容
+            // 流式阶段仅追加纯文本；formatTimelineStreamBody 在终态 response 时一次性处理
             if (state.itemId) {
                 const item = document.getElementById(state.itemId);
                 if (item) {
                     const contentEl = item.querySelector('.timeline-item-content');
                     if (contentEl) {
-                        const meta = state.streamMeta || responseData;
-                        const body = formatTimelineStreamBody(state.buffer, meta);
-                        setTimelineItemContentStreamPlain(contentEl, body);
+                        scheduleStreamPlainTextUpdate(contentEl, state.buffer);
                     }
                 }
             }
@@ -2772,39 +2883,22 @@ async function attachRunningTaskEventStream(conversationId) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            const dispatchTaskEvent = function (eventData) {
+                handleStreamEvent(eventData, null, progressId, getAssistantIdFn, setAssistantIdFn, function () { return mcpIds; }, function (ids) { mcpIds = mergeMcpExecutionIDLists(mcpIds, ids || []); });
+            };
             while (true) {
                 const chunk = await reader.read();
                 if (chunk.done) break;
                 buffer += decoder.decode(chunk.value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
-                for (let li = 0; li < lines.length; li++) {
-                    const line = lines[li];
-                    if (line.indexOf('data: ') === 0) {
-                        try {
-                            const eventData = JSON.parse(line.slice(6));
-                            handleStreamEvent(eventData, null, progressId, getAssistantIdFn, setAssistantIdFn, function () { return mcpIds; }, function (ids) { mcpIds = mergeMcpExecutionIDLists(mcpIds, ids || []); });
-                        } catch (e) {
-                            console.error('task-events parse', e);
-                        }
-                    }
-                }
+                await processSseDataLinesYielding(lines, dispatchTaskEvent);
             }
             // Flush decoder internal buffer to avoid dropping trailing partial UTF-8 bytes.
             buffer += decoder.decode();
             if (buffer.trim()) {
                 const lines = buffer.split('\n');
-                for (let li = 0; li < lines.length; li++) {
-                    const line = lines[li];
-                    if (line.indexOf('data: ') === 0) {
-                        try {
-                            const eventData = JSON.parse(line.slice(6));
-                            handleStreamEvent(eventData, null, progressId, getAssistantIdFn, setAssistantIdFn, function () { return mcpIds; }, function (ids) { mcpIds = mergeMcpExecutionIDLists(mcpIds, ids || []); });
-                        } catch (e) {
-                            console.error('task-events parse', e);
-                        }
-                    }
-                }
+                await processSseDataLinesYielding(lines, dispatchTaskEvent);
             }
             if (window.csTaskReplay && window.csTaskReplay.progressId === progressId) {
                 clearCsTaskReplay();
@@ -2936,7 +3030,9 @@ function mergeToolResultIntoCallItem(item, data, options) {
     const pre = section.querySelector('pre.tool-result');
     if (pre) {
         pre.classList.remove('tool-result-pending');
+        flushStreamPlainTextUpdate(pre);
         pre.textContent = text;
+        resetStreamPlainTextState(pre);
     }
 
     if (data.executionId) {

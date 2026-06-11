@@ -982,6 +982,24 @@ async function sendMessage() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            const dispatchStreamEvent = function (eventData) {
+                handleStreamEvent(eventData, progressElement, progressId,
+                    () => assistantMessageId, (id) => { assistantMessageId = id; },
+                    () => mcpExecutionIds, (ids) => { mcpExecutionIds = ids; });
+            };
+            const processSseLines = typeof processSseDataLinesYielding === 'function'
+                ? processSseDataLinesYielding
+                : async function (lines, onEvent) {
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                onEvent(JSON.parse(line.slice(6)));
+                            } catch (e) {
+                                console.error('解析事件数据失败:', e, line);
+                            }
+                        }
+                    }
+                };
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -991,18 +1009,7 @@ async function sendMessage() {
                 const lines = buffer.split('\n');
                 buffer = lines.pop(); // 保留最后一个不完整的行
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const eventData = JSON.parse(line.slice(6));
-                            handleStreamEvent(eventData, progressElement, progressId,
-                                             () => assistantMessageId, (id) => { assistantMessageId = id; },
-                                             () => mcpExecutionIds, (ids) => { mcpExecutionIds = ids; });
-                        } catch (e) {
-                            console.error('解析事件数据失败:', e, line);
-                        }
-                    }
-                }
+                await processSseLines(lines, dispatchStreamEvent);
             }
             // Flush decoder internal buffer to avoid losing the final partial UTF-8 code point.
             buffer += decoder.decode();
@@ -1010,18 +1017,7 @@ async function sendMessage() {
             // 处理剩余的buffer
             if (buffer.trim()) {
                 const lines = buffer.split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const eventData = JSON.parse(line.slice(6));
-                            handleStreamEvent(eventData, progressElement, progressId,
-                                             () => assistantMessageId, (id) => { assistantMessageId = id; },
-                                             () => mcpExecutionIds, (ids) => { mcpExecutionIds = ids; });
-                        } catch (e) {
-                            console.error('解析事件数据失败:', e, line);
-                        }
-                    }
-                }
+                await processSseLines(lines, dispatchStreamEvent);
             }
         } finally {
             window.__csAgentLiveStream = { active: false, conversationId: null, progressId: null };

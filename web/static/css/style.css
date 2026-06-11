@@ -4095,6 +4095,12 @@ header {
     word-break: break-word;
 }
 
+/* 长过程详情：跳过视口外时间线条目的布局/绘制，减轻大段工具输出时的主线程压力 */
+.progress-timeline .timeline-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 72px;
+}
+
 .tool-details {
     display: flex;
     flex-direction: column;
