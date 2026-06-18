@@ -5763,6 +5763,95 @@ let conversationGroupMappingCache = {};
 let pendingGroupMappings = {}; // 待保留的分组映射（用于处理后端API延迟的情况）
 let conversationsListLoadSeq = 0; // 对话列表加载序号，避免并发请求导致重复渲染
 const CONVERSATIONS_PAGE_SIZE_KEY = 'cyberstrike.conversations_page_size';
+const CONVERSATIONS_SORT_KEY = 'cyberstrike.conversations_sort_by';
+
+function getConversationSortBy() {
+    try {
+        const saved = localStorage.getItem(CONVERSATIONS_SORT_KEY);
+        if (saved === 'created_at' || saved === 'updated_at') return saved;
+    } catch (e) { /* ignore */ }
+    return 'updated_at';
+}
+
+let conversationSortBy = getConversationSortBy();
+
+function getConversationSortTime(conv) {
+    const field = conversationSortBy === 'created_at' ? 'createdAt' : 'updatedAt';
+    const raw = conv && conv[field];
+    if (!raw) return new Date(0);
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? new Date(0) : date;
+}
+
+function updateConversationSortMenuUI() {
+    const menu = document.getElementById('conversation-sort-menu');
+    const btn = document.getElementById('conversation-sort-btn');
+    if (!menu) return;
+    menu.querySelectorAll('.conversation-sort-option').forEach((option) => {
+        const selected = option.dataset.sort === conversationSortBy;
+        option.classList.toggle('is-selected', selected);
+        option.setAttribute('aria-checked', selected ? 'true' : 'false');
+    });
+    if (btn) {
+        btn.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
+    }
+}
+
+function closeConversationSortMenu() {
+    const menu = document.getElementById('conversation-sort-menu');
+    const btn = document.getElementById('conversation-sort-btn');
+    if (menu) menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleConversationSortMenu(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const menu = document.getElementById('conversation-sort-menu');
+    const btn = document.getElementById('conversation-sort-btn');
+    if (!menu || !btn) return;
+    const willOpen = menu.hidden;
+    closeConversationSortMenu();
+    if (willOpen) {
+        menu.hidden = false;
+        btn.setAttribute('aria-expanded', 'true');
+        updateConversationSortMenuUI();
+    }
+}
+
+function setConversationSortBy(sortBy) {
+    const next = sortBy === 'created_at' ? 'created_at' : 'updated_at';
+    if (next === conversationSortBy) {
+        closeConversationSortMenu();
+        return;
+    }
+    conversationSortBy = next;
+    try {
+        localStorage.setItem(CONVERSATIONS_SORT_KEY, next);
+    } catch (e) { /* ignore */ }
+    updateConversationSortMenuUI();
+    closeConversationSortMenu();
+    conversationsPagination.page = 1;
+    loadConversationsWithGroups(conversationsSearchQuery);
+}
+
+if (!window.__conversationSortMenuBound) {
+    window.__conversationSortMenuBound = true;
+    document.addEventListener('click', (event) => {
+        const dropdown = document.getElementById('conversation-sort-dropdown');
+        if (!dropdown || dropdown.contains(event.target)) return;
+        closeConversationSortMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeConversationSortMenu();
+    });
+}
+
+window.toggleConversationSortMenu = toggleConversationSortMenu;
+window.setConversationSortBy = setConversationSortBy;
+window.closeConversationSortMenu = closeConversationSortMenu;
 
 function getConversationsPageSize() {
     try {
@@ -6025,6 +6114,9 @@ async function loadConversationsWithGroups(searchQuery = '') {
         const pageSize = conversationsPagination.pageSize;
         const offset = (conversationsPagination.page - 1) * pageSize;
         const convParams = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+        if (conversationSortBy === 'created_at') {
+            convParams.set('sort_by', 'created_at');
+        }
         if (searchQuery && searchQuery.trim()) {
             convParams.set('search', searchQuery.trim());
         } else {
@@ -6114,11 +6206,7 @@ async function loadConversationsWithGroups(searchQuery = '') {
         });
 
         // 按时间排序
-        const sortByTime = (a, b) => {
-            const timeA = a.updatedAt ? new Date(a.updatedAt) : new Date(0);
-            const timeB = b.updatedAt ? new Date(b.updatedAt) : new Date(0);
-            return timeB - timeA;
-        };
+        const sortByTime = (a, b) => getConversationSortTime(b) - getConversationSortTime(a);
 
         pinnedConvs.sort(sortByTime);
         normalConvs.sort(sortByTime);
@@ -6146,8 +6234,8 @@ async function loadConversationsWithGroups(searchQuery = '') {
         };
 
         normalConvs.forEach(conv => {
-            const dateObj = conv.updatedAt ? new Date(conv.updatedAt) : new Date();
-            const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
+            const dateObj = getConversationSortTime(conv);
+            const validDate = dateObj.getTime() === 0 ? new Date() : dateObj;
             const groupKey = getConversationGroup(validDate, todayStart, sevenDaysCutoff, yesterdayStart);
             groups[groupKey].push({
                 ...conv,
@@ -6159,8 +6247,8 @@ async function loadConversationsWithGroups(searchQuery = '') {
 
         if (pinnedConvs.length > 0) {
             pinnedConvs.forEach(conv => {
-                const dateObj = conv.updatedAt ? new Date(conv.updatedAt) : new Date();
-                const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
+                const dateObj = getConversationSortTime(conv);
+                const validDate = dateObj.getTime() === 0 ? new Date() : dateObj;
                 fragment.appendChild(createConversationListItemWithMenu({
                     ...conv,
                     _timeText: formatConversationTimestamp(validDate, todayStart, yesterdayStart),
@@ -8508,6 +8596,7 @@ function clearGroupSearch() {
 
 // 初始化时加载分组
 document.addEventListener('DOMContentLoaded', async () => {
+    updateConversationSortMenuUI();
     await loadGroups();
     await loadConversationsWithGroups();
     

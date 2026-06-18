@@ -808,16 +808,49 @@
                                 <div class="recent-conversations-section">
                                     <div class="section-header">
                                         <span class="section-title" data-i18n="chat.recentConversations">最近对话</span>
-                                        <button class="batch-manage-btn" onclick="showBatchManageModal()" data-i18n="chat.batchManage" data-i18n-attr="title" data-i18n-skip-text="true" title="批量管理">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                <circle cx="8" cy="6" r="1" fill="currentColor"/>
-                                                <circle cx="8" cy="12" r="1" fill="currentColor"/>
-                                                <circle cx="8" cy="18" r="1" fill="currentColor"/>
-                                            </svg>
-                                        </button>
+                                        <div class="section-header-actions">
+                                            <div class="conversation-sort-dropdown" id="conversation-sort-dropdown">
+                                                <button type="button" class="conversation-sort-btn" id="conversation-sort-btn" onclick="toggleConversationSortMenu(event)" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-sort-menu" data-i18n="chat.sortConversations" data-i18n-attr="title" data-i18n-skip-text="true" title="排序">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                                        <path d="M3 6h18M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                    </svg>
+                                                </button>
+                                                <div class="conversation-sort-menu" id="conversation-sort-menu" role="menu" hidden>
+                                                    <button type="button" class="conversation-sort-option" role="menuitemradio" data-sort="created_at" onclick="setConversationSortBy('created_at')">
+                                                        <span class="conversation-sort-option-icon" aria-hidden="true">
+                                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                <rect x="3" y="5" width="18" height="16" rx="2.5" stroke="currentColor" stroke-width="1.75"/>
+                                                                <path d="M3 10h18" stroke="currentColor" stroke-width="1.75"/>
+                                                                <path d="M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                                                                <circle cx="12" cy="15" r="1.75" fill="currentColor"/>
+                                                            </svg>
+                                                        </span>
+                                                        <span class="conversation-sort-option-label" data-i18n="chat.sortByCreatedAt">创建时间</span>
+                                                        <span class="conversation-sort-option-check" aria-hidden="true">✓</span>
+                                                    </button>
+                                                    <button type="button" class="conversation-sort-option" role="menuitemradio" data-sort="updated_at" onclick="setConversationSortBy('updated_at')">
+                                                        <span class="conversation-sort-option-icon" aria-hidden="true">
+                                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.75"/>
+                                                                <path d="M12 8v4.5l3 2" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                                                            </svg>
+                                                        </span>
+                                                        <span class="conversation-sort-option-label" data-i18n="chat.sortByUpdatedAt">更新时间</span>
+                                                        <span class="conversation-sort-option-check" aria-hidden="true">✓</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <button class="batch-manage-btn" onclick="showBatchManageModal()" data-i18n="chat.batchManage" data-i18n-attr="title" data-i18n-skip-text="true" title="批量管理">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                    <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                    <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                    <circle cx="8" cy="6" r="1" fill="currentColor"/>
+                                                    <circle cx="8" cy="12" r="1" fill="currentColor"/>
+                                                    <circle cx="8" cy="18" r="1" fill="currentColor"/>
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div id="conversations-list" class="conversations-list"></div>
                                 </div>
