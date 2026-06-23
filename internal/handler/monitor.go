@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp"
+	"cyberstrike-ai/internal/monitor"
 	"cyberstrike-ai/internal/security"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -19,12 +21,18 @@ import (
 
 // MonitorHandler 监控处理器
 type MonitorHandler struct {
-	mcpServer      *mcp.Server
-	externalMCPMgr *mcp.ExternalMCPManager
-	executor       *security.Executor
-	db             *database.DB
-	logger         *zap.Logger
-	audit          *audit.Service
+	mcpServer        *mcp.Server
+	externalMCPMgr   *mcp.ExternalMCPManager
+	executor         *security.Executor
+	db               *database.DB
+	logger           *zap.Logger
+	audit            *audit.Service
+	monitorRetention *monitor.Service
+}
+
+// SetMonitorRetention wires MCP execution retention settings.
+func (h *MonitorHandler) SetMonitorRetention(s *monitor.Service) {
+	h.monitorRetention = s
 }
 
 // SetAudit wires platform audit logging.
@@ -50,13 +58,14 @@ func (h *MonitorHandler) SetExternalMCPManager(mgr *mcp.ExternalMCPManager) {
 
 // MonitorResponse 监控响应
 type MonitorResponse struct {
-	Executions []*mcp.ToolExecution      `json:"executions"`
-	Stats      map[string]*mcp.ToolStats `json:"stats"`
-	Timestamp  time.Time                 `json:"timestamp"`
-	Total      int                       `json:"total,omitempty"`
-	Page       int                       `json:"page,omitempty"`
-	PageSize   int                       `json:"page_size,omitempty"`
-	TotalPages int                       `json:"total_pages,omitempty"`
+	Executions    []*mcp.ToolExecution      `json:"executions"`
+	Stats         map[string]*mcp.ToolStats `json:"stats"`
+	Timestamp     time.Time                 `json:"timestamp"`
+	Total         int                       `json:"total,omitempty"`
+	Page          int                       `json:"page,omitempty"`
+	PageSize      int                       `json:"page_size,omitempty"`
+	TotalPages    int                       `json:"total_pages,omitempty"`
+	RetentionDays int                       `json:"retention_days,omitempty"`
 }
 
 // Monitor 获取监控信息
@@ -89,14 +98,22 @@ func (h *MonitorHandler) Monitor(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, MonitorResponse{
-		Executions: executions,
-		Stats:      stats,
-		Timestamp:  time.Now(),
-		Total:      total,
-		Page:       page,
-		PageSize:   pageSize,
-		TotalPages: totalPages,
+		Executions:    executions,
+		Stats:         stats,
+		Timestamp:     time.Now(),
+		Total:         total,
+		Page:          page,
+		PageSize:      pageSize,
+		TotalPages:    totalPages,
+		RetentionDays: h.monitorRetentionDays(),
 	})
+}
+
+func (h *MonitorHandler) monitorRetentionDays() int {
+	if h.monitorRetention != nil {
+		return h.monitorRetention.RetentionDays()
+	}
+	return config.MonitorConfig{}.RetentionDaysEffective()
 }
 
 func (h *MonitorHandler) loadExecutions() []*mcp.ToolExecution {
