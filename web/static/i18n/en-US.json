@@ -1656,6 +1656,7 @@
     "rateWarning": "Some failures detected",
     "rateCritical": "High failure rate",
     "statsSubtitle": "Refreshed {{time}} · {{count}} tools",
+    "retentionHint": "Execution records are kept for {{days}} days, then purged automatically.",
     "timelineTitle": "Call trend",
     "timelineHint": "All tools combined (not split by tool)",
     "timelineRange24h": "24h",

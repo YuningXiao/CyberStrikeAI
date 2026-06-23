@@ -1644,6 +1644,7 @@
     "rateWarning": "存在失败调用",
     "rateCritical": "失败率偏高",
     "statsSubtitle": "最后刷新 {{time}} · 共 {{count}} 个工具",
+    "retentionHint": "执行记录保留 {{days}} 天，超期自动清理",
     "timelineTitle": "调用趋势",
     "timelineHint": "全部工具合计，不按工具拆分",
     "timelineRange24h": "24 小时",

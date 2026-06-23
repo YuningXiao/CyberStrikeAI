@@ -3532,6 +3532,7 @@ const monitorState = {
     timelineRange: null,
     timelineError: null,
     lastFetchedAt: null,
+    retentionDays: 0,
     pagination: {
         page: 1,
         pageSize: (() => {
@@ -3627,6 +3628,7 @@ async function refreshMonitorPanel(page = null) {
         monitorState.timeline = timeline;
         monitorState.timelineError = timelineError;
         monitorState.lastFetchedAt = new Date();
+        monitorState.retentionDays = typeof result.retention_days === 'number' ? result.retention_days : 0;
         
         // 更新分页信息
         if (result.total !== undefined) {
@@ -3710,6 +3712,7 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
         monitorState.timeline = timeline;
         monitorState.timelineError = timelineError;
         monitorState.lastFetchedAt = new Date();
+        monitorState.retentionDays = typeof result.retention_days === 'number' ? result.retention_days : 0;
         
         // 更新分页信息
         if (result.total !== undefined) {
@@ -4527,15 +4530,20 @@ function renderMcpStatsStackedBar(success, failed) {
     </div>`;
 }
 
-function updateMonitorStatsSubtitle(lastFetchedAt, toolCount) {
+function updateMonitorStatsSubtitle(lastFetchedAt, toolCount, retentionDays) {
     const subtitle = document.getElementById('monitor-stats-subtitle');
     if (!subtitle) return;
     const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
     const timeText = lastFetchedAt
         ? (lastFetchedAt.toLocaleString ? lastFetchedAt.toLocaleString(locale) : String(lastFetchedAt))
         : '—';
-    const text = mcpMonitorT('statsSubtitle', { time: timeText, count: toolCount })
+    let text = mcpMonitorT('statsSubtitle', { time: timeText, count: toolCount })
         || monitorFallback(`最后刷新 ${timeText} · 共 ${toolCount} 个工具`, `Refreshed ${timeText} · ${toolCount} tools`);
+    if (typeof retentionDays === 'number' && retentionDays > 0) {
+        const hint = mcpMonitorT('retentionHint', { days: retentionDays })
+            || monitorFallback(`执行记录保留 ${retentionDays} 天，超期自动清理`, `Execution records are kept for ${retentionDays} days, then purged automatically.`);
+        text += ' · ' + hint;
+    }
     subtitle.textContent = text;
     subtitle.hidden = false;
 }
@@ -4960,7 +4968,7 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     } else if (toolFilterEl) {
         toolFilterEl.classList.remove('is-filter-active');
     }
-    updateMonitorStatsSubtitle(lastFetchedAt, entries.length);
+    updateMonitorStatsSubtitle(lastFetchedAt, entries.length, monitorState.retentionDays);
 }
 
 function renderMonitorExecutions(executions = [], statusFilter = 'all') {
