@@ -247,6 +247,8 @@ type AgentTaskManager struct {
 	maxHistorySize   int              // 最大历史记录数
 	historyRetention time.Duration    // 历史记录保留时间
 	eventBus         *TaskEventBus    // 可选：任务结束时关闭镜像 SSE 订阅
+	// toolCanceler 在用户整轮停止任务时终止当前 MCP 工具（非「中断并继续」）。
+	toolCanceler func(conversationID string)
 }
 
 const (
@@ -275,6 +277,13 @@ func (m *AgentTaskManager) SetTaskEventBus(b *TaskEventBus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.eventBus = b
+}
+
+// SetToolCanceler 设置整轮停止任务时终止当前 MCP 工具的回调（由 AgentHandler 注入）。
+func (m *AgentTaskManager) SetToolCanceler(fn func(conversationID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.toolCanceler = fn
 }
 
 // GetTask 返回运行中任务（无则 nil）。
@@ -372,13 +381,20 @@ func (m *AgentTaskManager) CancelTask(conversationID string, cause error) (bool,
 		task.InterruptContinueNote = ""
 	}
 	cancel := task.cancel
-	m.mu.Unlock()
-
 	if cause == nil {
 		cause = ErrTaskCancelled
 	}
+	var toolCanceler func(string)
+	if errors.Is(cause, ErrTaskCancelled) {
+		toolCanceler = m.toolCanceler
+	}
+	m.mu.Unlock()
+
 	if cancel != nil {
 		cancel(cause)
+	}
+	if toolCanceler != nil {
+		toolCanceler(conversationID)
 	}
 	return true, nil
 }
