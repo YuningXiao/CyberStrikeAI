@@ -828,33 +828,13 @@ func Load(path string) (*Config, error) {
 
 	// 如果配置了工具目录，从目录加载工具配置
 	if cfg.Security.ToolsDir != "" {
-		configDir := filepath.Dir(path)
-		toolsDir := cfg.Security.ToolsDir
-
-		// 如果是相对路径，相对于配置文件所在目录
-		if !filepath.IsAbs(toolsDir) {
-			toolsDir = filepath.Join(configDir, toolsDir)
-		}
-
-		tools, err := LoadToolsFromDir(toolsDir)
+		inlineTools := append([]ToolConfig(nil), cfg.Security.Tools...)
+		toolsDir := ResolveToolsDir(cfg.Security.ToolsDir, path)
+		merged, err := MergeToolsFromDir(toolsDir, inlineTools)
 		if err != nil {
 			return nil, fmt.Errorf("从工具目录加载工具配置失败: %w", err)
 		}
-
-		// 合并工具配置：目录中的工具优先，主配置中的工具作为补充
-		existingTools := make(map[string]bool)
-		for _, tool := range tools {
-			existingTools[tool.Name] = true
-		}
-
-		// 添加主配置中不存在于目录中的工具（向后兼容）
-		for _, tool := range cfg.Security.Tools {
-			if !existingTools[tool.Name] {
-				tools = append(tools, tool)
-			}
-		}
-
-		cfg.Security.Tools = tools
+		cfg.Security.Tools = merged
 	}
 
 	// 外部 MCP：迁移 + 环境变量展开
@@ -1124,6 +1104,75 @@ func PrintMCPConfigJSON(mcp MCPConfig) {
 	fmt.Println("----------------------------------------------------------------")
 	fmt.Println(string(b))
 	fmt.Println("----------------------------------------------------------------")
+}
+
+// ResolveToolsDir 将 tools_dir 解析为绝对路径（相对路径相对于 configPath 所在目录）。
+func ResolveToolsDir(toolsDir, configPath string) string {
+	toolsDir = strings.TrimSpace(toolsDir)
+	if toolsDir == "" {
+		return ""
+	}
+	if filepath.IsAbs(toolsDir) {
+		return toolsDir
+	}
+	return filepath.Join(filepath.Dir(configPath), toolsDir)
+}
+
+// MergeToolsFromDir 从目录加载工具并与 inline 列表合并：目录中的工具优先，主配置中的工具作为补充。
+func MergeToolsFromDir(toolsDir string, inlineTools []ToolConfig) ([]ToolConfig, error) {
+	dirTools, err := LoadToolsFromDir(toolsDir)
+	if err != nil {
+		return nil, err
+	}
+	existing := make(map[string]bool, len(dirTools))
+	for _, tool := range dirTools {
+		existing[tool.Name] = true
+	}
+	merged := append([]ToolConfig(nil), dirTools...)
+	for _, tool := range inlineTools {
+		if !existing[tool.Name] {
+			merged = append(merged, tool)
+		}
+	}
+	return merged, nil
+}
+
+// loadInlineSecurityToolsFromYAML 读取 config.yaml 中 security.tools（不含 tools_dir 扫描结果）。
+func loadInlineSecurityToolsFromYAML(configPath string) ([]ToolConfig, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+	}
+	var partial struct {
+		Security struct {
+			Tools []ToolConfig `yaml:"tools"`
+		} `yaml:"security"`
+	}
+	if err := yaml.Unmarshal(data, &partial); err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+	if partial.Security.Tools == nil {
+		return []ToolConfig{}, nil
+	}
+	return partial.Security.Tools, nil
+}
+
+// ReloadSecurityToolsFromDir 从 tools_dir 重新加载工具并更新 cfg.Security.Tools（ApplyConfig 热重载用）。
+func ReloadSecurityToolsFromDir(cfg *Config, configPath string) error {
+	if cfg == nil || strings.TrimSpace(cfg.Security.ToolsDir) == "" {
+		return nil
+	}
+	inlineTools, err := loadInlineSecurityToolsFromYAML(configPath)
+	if err != nil {
+		return err
+	}
+	toolsDir := ResolveToolsDir(cfg.Security.ToolsDir, configPath)
+	merged, err := MergeToolsFromDir(toolsDir, inlineTools)
+	if err != nil {
+		return fmt.Errorf("从工具目录加载工具配置失败: %w", err)
+	}
+	cfg.Security.Tools = merged
+	return nil
 }
 
 // LoadToolsFromDir 从目录加载所有工具配置文件

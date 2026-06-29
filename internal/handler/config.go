@@ -1333,6 +1333,17 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 		h.logger.Info("已更新嵌入模型配置记录")
 	}
 
+	// 从 tools 目录重新加载工具配置（新增/修改/删除 yaml 后无需重启）
+	if err := config.ReloadSecurityToolsFromDir(h.config, h.configPath); err != nil {
+		h.logger.Error("重新加载工具配置失败", zap.Error(err))
+		if h.audit != nil {
+			h.audit.RecordFail(c, "config", "apply", "应用配置失败：重新加载工具", map[string]interface{}{"error": err.Error()})
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新加载工具配置失败: " + err.Error()})
+		return
+	}
+	h.logger.Info("已从 tools 目录重新加载工具配置", zap.Int("tools_count", len(h.config.Security.Tools)))
+
 	// 重新注册工具（根据新的启用状态）
 	h.logger.Info("重新注册工具")
 
