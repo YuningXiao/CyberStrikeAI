@@ -1489,17 +1489,51 @@ func (h *AgentHandler) SubscribeAgentTaskEvents(c *gin.Context) {
 	}
 }
 
+// enrichAgentTasksWithConversationTitles 为任务列表附加当前会话标题（供顶栏/任务页展示，重命名后自动同步）
+func (h *AgentHandler) enrichAgentTasksWithConversationTitles(tasks []*AgentTask) {
+	if h == nil || h.db == nil {
+		return
+	}
+	for _, task := range tasks {
+		if task == nil || strings.TrimSpace(task.ConversationID) == "" {
+			continue
+		}
+		if title, err := h.db.GetConversationTitle(task.ConversationID); err == nil {
+			task.Title = strings.TrimSpace(title)
+		}
+	}
+}
+
+// enrichCompletedTasksWithConversationTitles 为已完成任务附加当前会话标题
+func (h *AgentHandler) enrichCompletedTasksWithConversationTitles(tasks []*CompletedTask) {
+	if h == nil || h.db == nil {
+		return
+	}
+	for _, task := range tasks {
+		if task == nil || strings.TrimSpace(task.ConversationID) == "" {
+			continue
+		}
+		if title, err := h.db.GetConversationTitle(task.ConversationID); err == nil {
+			task.Title = strings.TrimSpace(title)
+		}
+	}
+}
+
 // ListAgentTasks 列出所有运行中的任务
 func (h *AgentHandler) ListAgentTasks(c *gin.Context) {
+	tasks := h.tasks.GetActiveTasks()
+	h.enrichAgentTasksWithConversationTitles(tasks)
 	c.JSON(http.StatusOK, gin.H{
-		"tasks": h.tasks.GetActiveTasks(),
+		"tasks": tasks,
 	})
 }
 
 // ListCompletedTasks 列出最近完成的任务历史
 func (h *AgentHandler) ListCompletedTasks(c *gin.Context) {
+	tasks := h.tasks.GetCompletedTasks()
+	h.enrichCompletedTasksWithConversationTitles(tasks)
 	c.JSON(http.StatusOK, gin.H{
-		"tasks": h.tasks.GetCompletedTasks(),
+		"tasks": tasks,
 	})
 }
 

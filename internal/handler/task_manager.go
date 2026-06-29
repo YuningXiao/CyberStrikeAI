@@ -26,6 +26,7 @@ func shouldPersistEinoAgentTraceAfterRunError(baseCtx context.Context) bool {
 // AgentTask 描述正在运行的Agent任务
 type AgentTask struct {
 	ConversationID string    `json:"conversationId"`
+	Title          string    `json:"title,omitempty"`
 	Message        string    `json:"message,omitempty"`
 	StartedAt      time.Time `json:"startedAt"`
 	Status         string    `json:"status"`
@@ -233,6 +234,7 @@ func (m *AgentTaskManager) ActiveMCPExecutionID(conversationID string) string {
 // CompletedTask 已完成的任务（用于历史记录）
 type CompletedTask struct {
 	ConversationID string    `json:"conversationId"`
+	Title          string    `json:"title,omitempty"`
 	Message        string    `json:"message,omitempty"`
 	StartedAt      time.Time `json:"startedAt"`
 	CompletedAt    time.Time `json:"completedAt"`

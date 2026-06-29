@@ -577,6 +577,19 @@ func (db *DB) ListUngroupedConversations(limit, offset int, sortBy, projectID st
 	return conversations, rows.Err()
 }
 
+// GetConversationTitle 获取对话标题（轻量查询，不加载消息）
+func (db *DB) GetConversationTitle(id string) (string, error) {
+	var title string
+	err := db.QueryRow("SELECT title FROM conversations WHERE id = ?", id).Scan(&title)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("对话不存在")
+		}
+		return "", fmt.Errorf("查询对话标题失败: %w", err)
+	}
+	return title, nil
+}
+
 // UpdateConversationTitle 更新对话标题
 func (db *DB) UpdateConversationTitle(id, title string) error {
 	// 注意：不更新 updated_at，因为重命名操作不应该改变对话的更新时间
