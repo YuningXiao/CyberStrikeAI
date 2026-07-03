@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
@@ -31,7 +32,8 @@ func (h *WorkflowHandler) GetRun(c *gin.Context) {
 }
 
 func (h *WorkflowHandler) ListPendingRuns(c *gin.Context) {
-	runs, err := h.db.ListWorkflowRunsAwaitingHITL(50)
+	conversationID := strings.TrimSpace(c.Query("conversationId"))
+	runs, err := h.db.ListWorkflowRunsAwaitingHITLFiltered(conversationID, 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -73,6 +75,37 @@ func (h *WorkflowHandler) ResumeRun(c *gin.Context) {
 			}
 		}
 	}
+	if run.Status != "awaiting_hitl" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "工作流运行不在等待审批状态: " + run.Status})
+		return
+	}
+	if err := h.db.RecordWorkflowRunHITLDecision(runID, req.Approved, req.Comment); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	decision := workflowrunner.HITLDecision{
+		Approved: req.Approved,
+		Comment:  strings.TrimSpace(req.Comment),
+	}
+	delegated := workflowrunner.NotifyHITLDecision(runID, decision)
+	if !delegated {
+		for i := 0; i < 10; i++ {
+			time.Sleep(50 * time.Millisecond)
+			if workflowrunner.NotifyHITLDecision(runID, decision) {
+				delegated = true
+				break
+			}
+		}
+	}
+	if delegated {
+		c.JSON(http.StatusOK, gin.H{
+			"workflowRunId":    runID,
+			"status":           "delegated",
+			"streamResuming":   true,
+			"approved":         req.Approved,
+		})
+		return
+	}
 	result, err := workflowrunner.ResumeWorkflowRun(c.Request.Context(), workflowrunner.RunArgs{
 		DB:             h.db,
 		Logger:         h.logger,
@@ -87,9 +120,9 @@ func (h *WorkflowHandler) ResumeRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"response":     result.Response,
+		"response":      result.Response,
 		"workflowRunId": result.RunID,
-		"status":       result.Status,
-		"awaitingHitl": result.AwaitingHITL,
+		"status":        result.Status,
+		"awaitingHitl":  result.AwaitingHITL,
 	})
 }
