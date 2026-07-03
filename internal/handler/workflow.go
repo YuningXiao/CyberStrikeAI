@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
+	workflowrunner "cyberstrike-ai/internal/workflow"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -16,6 +19,8 @@ type WorkflowHandler struct {
 	db     *database.DB
 	logger *zap.Logger
 	audit  *audit.Service
+	agent  *agent.Agent
+	cfg    *config.Config
 }
 
 func NewWorkflowHandler(db *database.DB, logger *zap.Logger) *WorkflowHandler {
@@ -94,6 +99,10 @@ func (h *WorkflowHandler) save(c *gin.Context, pathID string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "graph 必须是合法 JSON"})
 		return
 	}
+	if err := workflowrunner.ValidateGraphJSON(c.Request.Context(), string(graph)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "工作流图无法编译: " + err.Error()})
+		return
+	}
 	var probe interface{}
 	if err := json.Unmarshal(graph, &probe); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "graph JSON 解析失败: " + err.Error()})
@@ -119,6 +128,7 @@ func (h *WorkflowHandler) save(c *gin.Context, pathID string) {
 		return
 	}
 	saved, _ := h.db.GetWorkflowDefinition(id)
+	workflowrunner.InvalidateCompiledCache(id)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "workflow", "save", "保存图编排流程", "workflow", id, map[string]interface{}{"name": name})
 	}
@@ -135,6 +145,7 @@ func (h *WorkflowHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	workflowrunner.InvalidateCompiledCache(id)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "workflow", "delete", "删除图编排流程", "workflow", id, nil)
 	}

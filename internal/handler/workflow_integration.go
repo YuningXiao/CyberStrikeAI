@@ -74,12 +74,24 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 	if prep.AssistantMessageID != "" {
 		_ = h.db.UpdateAssistantMessageFinalize(prep.AssistantMessageID, result.Response, nil, "")
 	}
-	sendEvent("response", result.Response, map[string]interface{}{
+	payload := map[string]interface{}{
 		"conversationId": prep.ConversationID,
 		"messageId":      prep.AssistantMessageID,
 		"agentMode":      "workflow",
 		"workflowRunId":  result.RunID,
-	})
+	}
+	if result.AwaitingHITL {
+		payload["workflowStatus"] = "awaiting_hitl"
+		payload["awaitingHitl"] = true
+	}
+	sendEvent("response", result.Response, payload)
+	if result.AwaitingHITL {
+		sendEvent("done", "", map[string]interface{}{
+			"conversationId": prep.ConversationID,
+			"workflowStatus": "awaiting_hitl",
+		})
+		return true
+	}
 	sendEvent("done", "", map[string]interface{}{"conversationId": prep.ConversationID})
 	return true
 }
@@ -125,6 +137,8 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 		"assistantMessageId": prep.AssistantMessageID,
 		"agentMode":          "workflow",
 		"workflowRunId":      result.RunID,
+		"workflowStatus":     result.Status,
+		"awaitingHitl":       result.AwaitingHITL,
 	})
 	return true
 }

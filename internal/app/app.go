@@ -358,6 +358,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	projectHandler := handler.NewProjectHandler(db, log.Logger)
 	workflowHandler := handler.NewWorkflowHandler(db, log.Logger)
 	workflowHandler.SetAudit(auditSvc)
+	workflowHandler.SetRuntime(agent, cfg)
 	vulnerabilityHandler.SetAudit(auditSvc)
 	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
 	webshellHandler.SetAudit(auditSvc)
@@ -1197,6 +1198,9 @@ func setupRoutes(
 		protected.DELETE("/roles/:name", roleHandler.DeleteRole)
 
 		// 图编排 / 工作流定义（图结构固定，业务字段保存在 graph_json 中）
+		protected.GET("/workflows/runs/pending", workflowHandler.ListPendingRuns)
+		protected.GET("/workflows/runs/:runId", workflowHandler.GetRun)
+		protected.POST("/workflows/runs/:runId/resume", workflowHandler.ResumeRun)
 		protected.GET("/workflows", workflowHandler.List)
 		protected.GET("/workflows/:id", workflowHandler.Get)
 		protected.POST("/workflows", workflowHandler.Create)
