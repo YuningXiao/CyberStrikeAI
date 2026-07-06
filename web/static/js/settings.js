@@ -6,6 +6,114 @@ let alwaysVisibleBuiltinToolNames = new Set();
 // 全局工具状态映射，用于保存用户在所有页面的修改
 // key: 唯一工具标识符（toolKey），value: { enabled: boolean, is_external: boolean, external_mcp: string }
 let toolStateMap = new Map();
+let activeRobotEditor = '';
+
+function settingsT(key, fallback) {
+    if (typeof window.t === 'function') {
+        const translated = window.t(key);
+        if (translated && translated !== key) return translated;
+    }
+    return fallback;
+}
+
+function getRobotStatus(type) {
+    const value = (id) => document.getElementById(id)?.value?.trim() || '';
+    const checked = (id) => document.getElementById(id)?.checked === true;
+    let configured = false;
+    let enabled = false;
+
+    if (type === 'wechat') {
+        configured = !!value('robot-wechat-ilink-bot-id');
+        enabled = checked('robot-wechat-enabled');
+    } else if (type === 'wecom') {
+        const agentId = parseInt(value('robot-wecom-agent-id'), 10);
+        configured = !!(value('robot-wecom-token') && value('robot-wecom-corp-id') && value('robot-wecom-secret') && agentId > 0);
+        enabled = checked('robot-wecom-enabled');
+    } else if (type === 'dingtalk') {
+        configured = !!(value('robot-dingtalk-client-id') && value('robot-dingtalk-client-secret'));
+        enabled = checked('robot-dingtalk-enabled');
+    } else if (type === 'lark') {
+        configured = !!(value('robot-lark-app-id') && value('robot-lark-app-secret'));
+        enabled = checked('robot-lark-enabled');
+    }
+
+    if (enabled) {
+        return { state: 'enabled', text: settingsT('settings.robots.statusEnabled', '已启用') };
+    }
+    if (configured) {
+        return { state: 'ready', text: settingsT('settings.robots.statusConfigured', '已配置') };
+    }
+    return { state: 'idle', text: settingsT('settings.robots.statusNotConfigured', '未配置') };
+}
+
+function refreshRobotManager() {
+    ['wechat', 'wecom', 'dingtalk', 'lark'].forEach((type) => {
+        const status = getRobotStatus(type);
+        const pill = document.getElementById(`robot-card-${type}-status`);
+        if (pill) {
+            pill.className = `robot-status-pill robot-status-pill--${status.state}`;
+            pill.textContent = status.text;
+        }
+        const card = document.querySelector(`[data-robot-card="${type}"]`);
+        if (card) {
+            card.classList.toggle('is-active', activeRobotEditor === type);
+        }
+    });
+}
+
+function openRobotEditor(type) {
+    activeRobotEditor = type;
+    const empty = document.getElementById('robot-editor-empty');
+    if (empty) empty.hidden = true;
+    document.querySelectorAll('[data-robot-editor]').forEach((panel) => {
+        panel.hidden = panel.dataset.robotEditor !== type;
+    });
+    refreshRobotManager();
+    const panel = document.querySelector(`[data-robot-editor="${type}"]`);
+    if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function openRobotCreateModal() {
+    const modal = document.getElementById('robot-create-modal');
+    if (modal) modal.style.display = 'block';
+}
+
+function closeRobotCreateModal() {
+    const modal = document.getElementById('robot-create-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function selectRobotType(type) {
+    closeRobotCreateModal();
+    openRobotEditor(type);
+}
+
+function bindRobotManagerEvents() {
+    const robotInputIds = [
+        'robot-wechat-enabled', 'robot-wechat-ilink-bot-id',
+        'robot-wecom-enabled', 'robot-wecom-token', 'robot-wecom-corp-id', 'robot-wecom-secret', 'robot-wecom-agent-id',
+        'robot-dingtalk-enabled', 'robot-dingtalk-client-id', 'robot-dingtalk-client-secret',
+        'robot-lark-enabled', 'robot-lark-app-id', 'robot-lark-app-secret'
+    ];
+    robotInputIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.robotManagerBound) {
+            el.addEventListener('input', refreshRobotManager);
+            el.addEventListener('change', refreshRobotManager);
+            el.dataset.robotManagerBound = 'true';
+        }
+    });
+
+    const modal = document.getElementById('robot-create-modal');
+    if (modal && !modal.dataset.robotManagerBound) {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeRobotCreateModal();
+        });
+        modal.dataset.robotManagerBound = 'true';
+    }
+}
 
 // 生成工具的唯一标识符，用于区分同名但来源不同的工具
 function getToolKey(tool) {
@@ -539,6 +647,8 @@ async function loadConfig(loadTools = true) {
         if (larkAppSecret) larkAppSecret.value = lark.app_secret || '';
         const larkVerify = document.getElementById('robot-lark-verify-token');
         if (larkVerify) larkVerify.value = lark.verify_token || '';
+        bindRobotManagerEvents();
+        refreshRobotManager();
         
         // 只有在需要时才加载工具列表（MCP管理页面需要，系统设置页面不需要）
         if (loadTools) {
