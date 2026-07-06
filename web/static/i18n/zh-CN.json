@@ -2553,6 +2553,8 @@
   },
   "settingsRobotsExtra": {
     "botCommandsTitle": "机器人命令说明",
+    "botCommandsEntryDesc": "查看机器人对话中可用的中英文命令，包括对话、角色、项目等常用操作。",
+    "viewAllCommands": "查看全部命令",
     "botCommandsDesc": "在对话中可发送以下命令（支持中英文）：",
     "botCmdCategoryGeneral": "通用",
     "botCmdCategoryConversation": "对话",

@@ -97,6 +97,24 @@ function closeRobotCreateModal() {
     if (modal) modal.style.display = 'none';
 }
 
+function openRobotCommandsModal() {
+    if (typeof openAppModal === 'function') {
+        openAppModal('robot-commands-modal', { focus: false });
+        return;
+    }
+    const modal = document.getElementById('robot-commands-modal');
+    if (modal) modal.style.display = 'block';
+}
+
+function closeRobotCommandsModal() {
+    if (typeof closeAppModal === 'function') {
+        closeAppModal('robot-commands-modal');
+        return;
+    }
+    const modal = document.getElementById('robot-commands-modal');
+    if (modal) modal.style.display = 'none';
+}
+
 function selectRobotType(type) {
     closeRobotCreateModal();
     openRobotEditor(type);
@@ -128,6 +146,14 @@ function bindRobotManagerEvents() {
             if (event.target === modal) closeRobotCreateModal();
         });
         modal.dataset.robotManagerBound = 'true';
+    }
+
+    const commandsModal = document.getElementById('robot-commands-modal');
+    if (commandsModal && !commandsModal.dataset.robotManagerBound) {
+        commandsModal.addEventListener('click', (event) => {
+            if (event.target === commandsModal) closeRobotCommandsModal();
+        });
+        commandsModal.dataset.robotManagerBound = 'true';
     }
 }
 

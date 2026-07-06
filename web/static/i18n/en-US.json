@@ -2565,6 +2565,8 @@
   },
   "settingsRobotsExtra": {
     "botCommandsTitle": "Bot command instructions",
+    "botCommandsEntryDesc": "View the Chinese and English commands available in robot chats, including common conversation, role, and project actions.",
+    "viewAllCommands": "View all commands",
     "botCommandsDesc": "You can send the following commands in chat (Chinese and English supported):",
     "botCmdCategoryGeneral": "General",
     "botCmdCategoryConversation": "Conversation",

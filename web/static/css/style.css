@@ -5732,6 +5732,16 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     max-width: 680px;
 }
 
+.robot-commands-modal-content {
+    max-width: 720px;
+    max-height: 86vh;
+}
+
+.robot-commands-modal-body {
+    max-height: calc(86vh - 88px);
+    overflow-y: auto;
+}
+
 .robot-type-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -5804,6 +5814,29 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     margin-bottom: 12px;
 }
 
+.robot-command-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.robot-command-entry h4 {
+    margin: 0 0 6px;
+}
+
+.robot-command-entry .settings-description {
+    margin: 0;
+}
+
+.robot-command-entry-copy {
+    min-width: 0;
+}
+
 .robot-cmd-category {
     font-size: 0.8125rem;
     font-weight: 600;
@@ -5827,6 +5860,17 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 .robot-cmd-footer {
     margin-top: 12px !important;
     margin-bottom: 0 !important;
+}
+
+@media (max-width: 768px) {
+    .robot-command-entry {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .robot-command-entry .btn-secondary {
+        width: 100%;
+    }
 }
 
 .form-hint {

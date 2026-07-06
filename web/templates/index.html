@@ -3717,42 +3717,57 @@
                                     </div>
                                 </div>
 
-                                <div class="settings-subsection">
-                                    <h4 data-i18n="settingsRobotsExtra.botCommandsTitle">机器人命令说明</h4>
-                                    <p class="settings-description" data-i18n="settingsRobotsExtra.botCommandsDesc">在对话中可发送以下命令（支持中英文）：</p>
+                                <div id="robot-commands-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="robot-commands-title">
+                                    <div class="modal-content robot-commands-modal-content">
+                                        <div class="modal-header">
+                                            <h2 id="robot-commands-title" data-i18n="settingsRobotsExtra.botCommandsTitle">机器人命令说明</h2>
+                                            <button type="button" class="modal-close" onclick="closeRobotCommandsModal()" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body robot-commands-modal-body">
+                                            <p class="settings-description" data-i18n="settingsRobotsExtra.botCommandsDesc">在对话中可发送以下命令（支持中英文）：</p>
 
-                                    <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryGeneral">通用</p>
-                                    <ul class="robot-cmd-list">
-                                        <li><code>帮助</code> <code>help</code> — <span data-i18n="settingsRobotsExtra.botCmdHelp">显示本帮助 | Show this help</span></li>
-                                        <li><code>版本</code> <code>version</code> — <span data-i18n="settingsRobotsExtra.botCmdVersion">显示当前版本号 | Show version</span></li>
-                                    </ul>
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryGeneral">通用</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>帮助</code> <code>help</code> — <span data-i18n="settingsRobotsExtra.botCmdHelp">显示本帮助 | Show this help</span></li>
+                                                <li><code>版本</code> <code>version</code> — <span data-i18n="settingsRobotsExtra.botCmdVersion">显示当前版本号 | Show version</span></li>
+                                            </ul>
 
-                                    <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryConversation">对话</p>
-                                    <ul class="robot-cmd-list">
-                                        <li><code>列表</code> <code>list</code> — <span data-i18n="settingsRobotsExtra.botCmdList">列出所有对话标题与 ID | List conversations</span></li>
-                                        <li><code>切换 &lt;ID&gt;</code> <code>switch &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdSwitch">指定对话继续 | Switch to conversation</span></li>
-                                        <li><code>新对话</code> <code>new</code> — <span data-i18n="settingsRobotsExtra.botCmdNew">开启新对话 | Start new conversation</span></li>
-                                        <li><code>清空</code> <code>clear</code> — <span data-i18n="settingsRobotsExtra.botCmdClear">清空当前上下文 | Clear context</span></li>
-                                        <li><code>当前</code> <code>current</code> — <span data-i18n="settingsRobotsExtra.botCmdCurrent">显示当前对话、角色与项目 | Show current conversation</span></li>
-                                        <li><code>停止</code> <code>stop</code> — <span data-i18n="settingsRobotsExtra.botCmdStop">中断当前任务 | Stop running task</span></li>
-                                        <li><code>删除 &lt;ID&gt;</code> <code>delete &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdDelete">删除指定对话 | Delete conversation</span></li>
-                                    </ul>
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryConversation">对话</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>列表</code> <code>list</code> — <span data-i18n="settingsRobotsExtra.botCmdList">列出所有对话标题与 ID | List conversations</span></li>
+                                                <li><code>切换 &lt;ID&gt;</code> <code>switch &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdSwitch">指定对话继续 | Switch to conversation</span></li>
+                                                <li><code>新对话</code> <code>new</code> — <span data-i18n="settingsRobotsExtra.botCmdNew">开启新对话 | Start new conversation</span></li>
+                                                <li><code>清空</code> <code>clear</code> — <span data-i18n="settingsRobotsExtra.botCmdClear">清空当前上下文 | Clear context</span></li>
+                                                <li><code>当前</code> <code>current</code> — <span data-i18n="settingsRobotsExtra.botCmdCurrent">显示当前对话、角色与项目 | Show current conversation</span></li>
+                                                <li><code>停止</code> <code>stop</code> — <span data-i18n="settingsRobotsExtra.botCmdStop">中断当前任务 | Stop running task</span></li>
+                                                <li><code>删除 &lt;ID&gt;</code> <code>delete &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdDelete">删除指定对话 | Delete conversation</span></li>
+                                            </ul>
 
-                                    <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryRole">角色</p>
-                                    <ul class="robot-cmd-list">
-                                        <li><code>角色</code> <code>roles</code> — <span data-i18n="settingsRobotsExtra.botCmdRoles">列出所有可用角色 | List roles</span></li>
-                                        <li><code>角色 &lt;名&gt;</code> <code>role &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdRole">切换当前角色 | Switch role</span></li>
-                                    </ul>
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryRole">角色</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>角色</code> <code>roles</code> — <span data-i18n="settingsRobotsExtra.botCmdRoles">列出所有可用角色 | List roles</span></li>
+                                                <li><code>角色 &lt;名&gt;</code> <code>role &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdRole">切换当前角色 | Switch role</span></li>
+                                            </ul>
 
-                                    <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryProject">项目</p>
-                                    <ul class="robot-cmd-list">
-                                        <li><code>项目</code> <code>projects</code> — <span data-i18n="settingsRobotsExtra.botCmdProjects">列出所有项目 | List projects</span></li>
-                                        <li><code>新建项目 &lt;名称&gt;</code> <code>new project &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdNewProject">创建项目并绑定当前对话 | Create &amp; bind project</span></li>
-                                        <li><code>绑定项目 &lt;ID或名称&gt;</code> <code>bind project &lt;ID|name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdBindProject">将当前对话绑定到项目 | Bind conversation</span></li>
-                                        <li><code>解除项目</code> <code>unbind project</code> — <span data-i18n="settingsRobotsExtra.botCmdUnbindProject">解除当前对话的项目绑定 | Unbind project</span></li>
-                                    </ul>
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryProject">项目</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>项目</code> <code>projects</code> — <span data-i18n="settingsRobotsExtra.botCmdProjects">列出所有项目 | List projects</span></li>
+                                                <li><code>新建项目 &lt;名称&gt;</code> <code>new project &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdNewProject">创建项目并绑定当前对话 | Create &amp; bind project</span></li>
+                                                <li><code>绑定项目 &lt;ID或名称&gt;</code> <code>bind project &lt;ID|name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdBindProject">将当前对话绑定到项目 | Bind conversation</span></li>
+                                                <li><code>解除项目</code> <code>unbind project</code> — <span data-i18n="settingsRobotsExtra.botCmdUnbindProject">解除当前对话的项目绑定 | Unbind project</span></li>
+                                            </ul>
 
-                                    <p class="settings-description robot-cmd-footer" data-i18n="settingsRobotsExtra.botCommandsFooter">除以上命令外，直接输入内容将发送给 AI 进行渗透测试/安全分析。Otherwise, send any text for AI penetration testing / security analysis.</p>
+                                            <p class="settings-description robot-cmd-footer" data-i18n="settingsRobotsExtra.botCommandsFooter">除以上命令外，直接输入内容将发送给 AI 进行渗透测试/安全分析。Otherwise, send any text for AI penetration testing / security analysis.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-subsection robot-command-entry">
+                                    <div class="robot-command-entry-copy">
+                                        <h4 data-i18n="settingsRobotsExtra.botCommandsTitle">机器人命令说明</h4>
+                                        <p class="settings-description" data-i18n="settingsRobotsExtra.botCommandsEntryDesc">查看机器人对话中可用的中英文命令，包括对话、角色、项目等常用操作。</p>
+                                    </div>
+                                    <button type="button" class="btn-secondary" onclick="openRobotCommandsModal()" data-i18n="settingsRobotsExtra.viewAllCommands">查看全部命令</button>
                                 </div>
 
                                 <div class="settings-actions">
