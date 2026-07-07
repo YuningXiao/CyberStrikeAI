@@ -2633,9 +2633,14 @@
                                 </div>
                                 <div id="workflow-custom-fields" class="workflow-custom-fields"></div>
                             </div>
-                            <div id="workflow-dry-run-panel" class="workflow-property-form" hidden>
-                                <div class="workflow-custom-fields-head">
+                            <div id="workflow-dry-run-panel" class="workflow-property-form workflow-dry-run-panel" hidden>
+                                <div class="workflow-custom-fields-head workflow-dry-run-head">
                                     <span data-i18n="workflows.dryRunTrace">试运行轨迹</span>
+                                    <button type="button" class="role-selection-panel-close workflow-dry-run-close" onclick="closeWorkflowDryRunPanel()" data-i18n="common.close" data-i18n-attr="title,aria-label" title="关闭" aria-label="关闭">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
                                 </div>
                                 <div id="workflow-dry-run-output" class="workflow-property-empty workflow-property-empty--compact"></div>
                             </div>

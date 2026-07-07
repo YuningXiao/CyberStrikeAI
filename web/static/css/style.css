@@ -32872,6 +32872,12 @@ html[data-theme="dark"] .form-group select {
     overflow-y: auto;
 }
 
+.workflow-properties > .workflow-dry-run-panel {
+    flex: 0 0 auto;
+    max-height: 42%;
+    overflow-y: auto;
+}
+
 .workflow-property-empty {
     margin: 14px;
     padding: 18px;
@@ -32911,6 +32917,38 @@ html[data-theme="dark"] .form-group select {
     gap: 10px;
     margin: 14px 0 8px;
     font-weight: 700;
+}
+
+.workflow-dry-run-panel {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    margin-top: auto;
+}
+
+.workflow-dry-run-head {
+    margin-top: 0;
+}
+
+.workflow-dry-run-close {
+    flex-shrink: 0;
+}
+
+.workflow-dry-run-step {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+.workflow-dry-run-step:last-child {
+    border-bottom: none;
+}
+
+.workflow-dry-run-step span {
+    color: var(--text-secondary);
+    font-size: 12px;
 }
 
 .workflow-custom-fields {

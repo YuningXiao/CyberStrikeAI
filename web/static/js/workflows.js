@@ -873,6 +873,7 @@
             layoutWorkflowGraph(false);
         }
         selectWorkflowElement(null);
+        closeWorkflowDryRunPanel();
         updateEmptyState();
         renderWorkflowList();
         setTimeout(() => cy && cy.resize(), 0);
@@ -1581,6 +1582,14 @@
         }
     }
 
+    function closeWorkflowDryRunPanel() {
+        const panel = document.getElementById('workflow-dry-run-panel');
+        const output = document.getElementById('workflow-dry-run-output');
+        if (!panel) return;
+        panel.hidden = true;
+        if (output) output.innerHTML = '';
+    }
+
     function renderWorkflowDryRunTrace(result) {
         const panel = document.getElementById('workflow-dry-run-panel');
         const output = document.getElementById('workflow-dry-run-output');
@@ -1600,6 +1609,8 @@
             </div>`;
         }).join('');
     }
+
+    window.closeWorkflowDryRunPanel = closeWorkflowDryRunPanel;
 
     window.saveWorkflowDraft = async function () {
         initCy();
@@ -1684,8 +1695,9 @@
             console.log(result);
             console.groupEnd();
             renderWorkflowDryRunTrace(result);
-            const summary = trace.slice(0, 8).map(item => `${item.label || item.nodeId}: ${item.status}`).join('\n');
-            window.alert((_t('workflows.dryRunDone') || 'Dry-run completed') + '\n\n' + summary);
+            if (typeof showNotification === 'function') {
+                showNotification(_t('workflows.dryRunDone') || 'Dry-run completed', 'success');
+            }
         } catch (error) {
             showNotification(error.message || _t('workflows.dryRunFailed'), 'error');
         }
