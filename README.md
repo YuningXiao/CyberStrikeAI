@@ -127,12 +127,12 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 🛡️ Vulnerability management with CRUD operations, severity tracking, status workflow, and statistics
 - 📋 Batch task management: create task queues, add multiple tasks, and execute them sequentially
 - 🎭 Role-based testing: predefined security testing roles (Penetration Testing, CTF, Web App Scanning, etc.) with custom prompts and tool restrictions
-- 🔀 **Graph orchestration**: visual workflow editor (Start / Agent / Tool / Condition / HITL / Output) with `{{previous.output}}` and `{{outputs.variable_name}}` for inter-node data passing; bind a graph to a role for automatic execution on chat. See [Graph orchestration guide](docs/workflow-graph_en.md)
-- 🧩 **Agent orchestration (CloudWeGo Eino)**: **single-agent** via **`/api/eino-agent/stream`** (Eino ADK `ChatModelAgent`); **multi-agent** via **`/api/multi-agent/stream`** with **`deep`** (coordinator + `task` sub-agents), **`plan_execute`**, or **`supervisor`** (`orchestration` in the request body). ADK **summarization** compresses long contexts; pre-compaction **transcripts** land at `data/conversation_artifacts/<conversation-id>/summarization/transcript.txt` (full user/assistant/tool turns; static system omitted). Markdown under `agents/`: `orchestrator.md`, `orchestrator-plan-execute.md`, `orchestrator-supervisor.md`, plus sub-agent `*.md` (see [Multi-agent doc](docs/MULTI_AGENT_EINO.md))
-- 🖼️ **Vision analysis (`analyze_image`)**: separate VL model (e.g. `qwen-vl-max`) via MCP for local screenshots, captchas, and UI; image bytes stay out of agent history (text summaries only). Configure `vision` in `config.yaml`; see [docs/VISION.md](docs/VISION.md)
+- 🔀 **Graph orchestration**: visual workflow editor (Start / Agent / Tool / Condition / HITL / Output) with `{{previous.output}}` and `{{outputs.variable_name}}` for inter-node data passing; bind a graph to a role for automatic execution on chat. See [Graph orchestration guide](docs/en-US/workflow-graph.md)
+- 🧩 **Agent orchestration (CloudWeGo Eino)**: **single-agent** via **`/api/eino-agent/stream`** (Eino ADK `ChatModelAgent`); **multi-agent** via **`/api/multi-agent/stream`** with **`deep`** (coordinator + `task` sub-agents), **`plan_execute`**, or **`supervisor`** (`orchestration` in the request body). ADK **summarization** compresses long contexts; pre-compaction **transcripts** land at `data/conversation_artifacts/<conversation-id>/summarization/transcript.txt` (full user/assistant/tool turns; static system omitted). Markdown under `agents/`: `orchestrator.md`, `orchestrator-plan-execute.md`, `orchestrator-supervisor.md`, plus sub-agent `*.md` (see [Multi-agent doc](docs/en-US/MULTI_AGENT_EINO.md))
+- 🖼️ **Vision analysis (`analyze_image`)**: separate VL model (e.g. `qwen-vl-max`) via MCP for local screenshots, captchas, and UI; image bytes stay out of agent history (text summaries only). Configure `vision` in `config.yaml`; see [docs/en-US/VISION.md](docs/en-US/VISION.md)
 - 🎯 **Skills (refactored for Eino)**: packs under `skills_dir` follow **Agent Skills** layout (`SKILL.md` + optional files); **multi-agent** sessions use the official Eino ADK **`skill`** tool for **progressive disclosure** (load by name), with optional **host filesystem / shell** via `multi_agent.eino_skills`; optional **`eino_middleware`** adds patchtoolcalls, tool_search, **plantask** (`TaskCreate` / `TaskList` boards under `skills_dir/.eino/plantask/`), reduction, file **checkpoints** (`checkpoint_dir`), ChatModel **retries**, session **output key**, and Deep tuning—20+ sample domains (SQLi, XSS, API security, …) ship under `skills/`
-- 📱 **Chatbot**: Personal WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot—chat from mobile or IM apps (see [Robot / Chatbot guide](docs/robot_en.md))
-- 🧑‍⚖️ **Human-in-the-loop (HITL)**: Chat sidebar to set approval mode and tool allowlists (listed tools skip approval); global list in `config.yaml` under `hitl.tool_whitelist`; the Audit Agent can use a separate lightweight model via `hitl.audit_model`; **Apply** can merge new tools into the file and update the running server without restart; dedicated **HITL** page for pending approvals. See [HITL best practices](docs/hitl-best-practices_en.md)
+- 📱 **Chatbot**: Personal WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot—chat from mobile or IM apps (see [Robot / Chatbot guide](docs/en-US/robot.md))
+- 🧑‍⚖️ **Human-in-the-loop (HITL)**: Chat sidebar to set approval mode and tool allowlists (listed tools skip approval); global list in `config.yaml` under `hitl.tool_whitelist`; the Audit Agent can use a separate lightweight model via `hitl.audit_model`; **Apply** can merge new tools into the file and update the running server without restart; dedicated **HITL** page for pending approvals. See [HITL best practices](docs/en-US/hitl-best-practices.md)
 - 🐚 **WebShell management**: Add and manage WebShell connections (e.g. IceSword/AntSword compatible), use a virtual terminal for command execution, a built-in file manager for file operations, and an AI assistant tab that orchestrates tests and keeps per-connection conversation history; supports PHP, ASP, ASPX, JSP and custom shell types with configurable request method and command parameter.
 - 📡 **Built-in C2**: AI-oriented lightweight command-and-control—**listeners** (TCP reverse, HTTP/HTTPS beacon, WebSocket), **encrypted** beacon channel, **session** and **task** queues with persistence, **payload** helpers (one-liner / build / download), **SSE** live events, REST under `/api/c2/*`, plus unified MCP tools (`c2_listener`, `c2_session`, **`c2_task`**, `c2_task_manage`, `c2_payload`, `c2_event`, `c2_profile`, `c2_file`); optional **HITL** approval for sensitive operations and OPSEC-style controls (e.g. command deny rules). **Authorized testing only.**
 
@@ -256,7 +256,7 @@ Requirements / tips:
 - **Conversation testing** – Natural-language prompts trigger toolchains with streaming SSE output.
 - **Single vs multi-agent** – Chat UI switches between **Eino single-agent** (`/api/eino-agent/stream`) and **multi-agent** (`/api/multi-agent/stream` with `orchestration`: `deep` | `plan_execute` | `supervisor`). Multi mode requires `multi_agent.enabled: true`. MCP tools are bridged the same way for both paths.
 - **Role-based testing** – Select from predefined security testing roles (Penetration Testing, CTF, Web App Scanning, API Security Testing, etc.) to customize AI behavior and tool availability. Each role applies custom system prompts and can restrict available tools for focused testing scenarios.
-- **Graph orchestration** – Design flows on the **Graph Orchestration** page (drag nodes, connect edges, save); bind `workflow_id` on a role to run the graph on chat (Agent, MCP tools, condition branches). Use `{{outputs.variable_name}}` to pass data across non-adjacent nodes. See [Graph orchestration guide](docs/workflow-graph_en.md).
+- **Graph orchestration** – Design flows on the **Graph Orchestration** page (drag nodes, connect edges, save); bind `workflow_id` on a role to run the graph on chat (Agent, MCP tools, condition branches). Use `{{outputs.variable_name}}` to pass data across non-adjacent nodes. See [Graph orchestration guide](docs/en-US/workflow-graph.md).
 - **Tool monitor** – Inspect running jobs, execution logs, and large-result attachments.
 - **History & audit** – Every conversation and tool invocation is stored in SQLite with replay.
 - **Conversation groups** – Organize conversations into groups, pin important groups, rename or delete groups via context menu.
@@ -308,7 +308,7 @@ Requirements / tips:
 - **Management** – Web UI: **Agents → Agent management**; API `/api/multi-agent/markdown-agents`.
 - **Config** – `multi_agent` in `config.yaml`: `enabled`, `robot_default_agent_mode`, `batch_use_multi_agent`, `max_iteration`, `plan_execute_loop_max_iterations`, per-mode orchestrator instruction fields, optional YAML `sub_agents` merged with disk (`id` clash → Markdown wins), **`eino_skills`**, **`eino_middleware`** (optional ADK middleware and Deep/Supervisor tuning).
 - **Resilience & long runs** – `checkpoint_dir` enables ADK **resume** after process crashes (distinct from trace-based “interrupt & continue”). `deep_model_retry_max_retries` retries transient LLM API failures within a single call. **Summarization** writes a filtered **transcript** when compression fires; the summary message includes the path so the model can `read_file` for scan output and other pre-compaction details.
-- **Details** – **[docs/MULTI_AGENT_EINO.md](docs/MULTI_AGENT_EINO.md)** (streaming, robots, batch, middleware caveats).
+- **Details** – **[docs/en-US/MULTI_AGENT_EINO.md](docs/en-US/MULTI_AGENT_EINO.md)** (streaming, robots, batch, middleware caveats).
 
 ### Skills System (Agent Skills + Eino)
 - **Layout** – Each skill is a directory with **required** `SKILL.md` only ([Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)): YAML front matter **only** `name` and `description`, plus Markdown body. Optional sibling files (`FORMS.md`, `REFERENCE.md`, `scripts/*`, …). **No** `SKILL.yaml` (not part of Claude or Eino specs); sections/scripts/progressive behavior are **derived at runtime** from Markdown and the filesystem.
@@ -631,10 +631,18 @@ enabled: true
 
 ## Related documentation
 
-- [Multi-agent mode (Eino)](docs/MULTI_AGENT_EINO.md): **Deep**, **Plan-Execute**, **Supervisor**, `agents/*.md`, `eino_skills` / `eino_middleware`, APIs, and chat/stream behavior.
-- [Graph orchestration guide](docs/workflow-graph_en.md): visual workflow design, node configuration, `previous` / `outputs` variable passing, and role binding.
-- [Robot / Chatbot guide](docs/robot_en.md): Setup, commands, and troubleshooting for WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot.
-- [HITL best practices](docs/hitl-best-practices_en.md): reviewer modes, allowlists, Audit Agent prompts, and separate small-model configuration.
+- [Documentation index](docs/README.md): deployment, configuration, security model, API, knowledge base, C2, WebShell, MCP, development, testing, and troubleshooting.
+- [Deployment guide](docs/en-US/deployment.md): source/binary startup, HTTPS, reverse proxy, systemd, backup, upgrade, and rollback.
+- [Runbooks](docs/en-US/runbooks.md): production setup, external MCP, knowledge base, authorized Web testing, and C2 cleanup workflows.
+- [Security hardening](docs/en-US/security-hardening.md): launch baseline, HITL allowlist, reverse proxy, file permissions, and periodic review.
+- [API recipes](docs/en-US/api-recipes.md): examples for login, Agent, streaming, multi-agent, uploads, vulnerabilities, KB, and audit export.
+- [Configuration reference](docs/en-US/configuration.md): main `config.yaml` sections, recommended values, and update guidance.
+- [Security model](docs/en-US/security-model.md): authentication, tool execution, HITL, audit, C2/WebShell, and data safety boundaries.
+- [API reference](docs/en-US/api-reference.md): OpenAPI, authentication, Agent, projects, knowledge base, C2, WebShell, and other API entry points.
+- [Multi-agent mode (Eino)](docs/en-US/MULTI_AGENT_EINO.md): **Deep**, **Plan-Execute**, **Supervisor**, `agents/*.md`, `eino_skills` / `eino_middleware`, APIs, and chat/stream behavior.
+- [Graph orchestration guide](docs/en-US/workflow-graph.md): visual workflow design, node configuration, `previous` / `outputs` variable passing, and role binding.
+- [Robot / Chatbot guide](docs/en-US/robot.md): Setup, commands, and troubleshooting for WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot.
+- [HITL best practices](docs/en-US/hitl-best-practices.md): reviewer modes, allowlists, Audit Agent prompts, and separate small-model configuration.
 
 ## Project Layout
 
@@ -647,7 +655,7 @@ CyberStrikeAI/
 ├── roles/               # Role configurations (12+ predefined security testing roles)
 ├── skills/              # Agent Skills dirs (SKILL.md + optional files; demo: cyberstrike-eino-demo)
 ├── agents/              # Multi-agent Markdown (orchestrator.md + sub-agent *.md)
-├── docs/                # Documentation (e.g. robot/chatbot guide, MULTI_AGENT_EINO.md)
+├── docs/                # Topic docs (deployment, config, security, API, knowledge base, C2, WebShell, etc.)
 ├── images/              # Docs screenshots & diagrams
 ├── config.yaml          # Runtime configuration
 ├── run.sh               # Convenience launcher
