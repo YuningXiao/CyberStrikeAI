@@ -729,22 +729,15 @@ func (h *AgentHandler) runRobotMultiAgentWithRetry(
 }
 
 // ProcessMessageForRobot 供机器人（企业微信/钉钉/飞书）调用：Eino 单/多代理执行路径（含 progressCallback、过程详情），仅不发送 SSE，最后返回完整回复
-func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, ownerUserID, conversationID, message, role string) (response string, convID string, err error) {
-	permissions := map[string]bool{
-		"agent:execute": true,
-		"chat:read":     true, "chat:write": true, "chat:delete": true,
-		"project:read": true, "project:write": true,
-		"knowledge:read":     true,
-		"vulnerability:read": true, "vulnerability:write": true,
-		"attackchain:read": true, "attackchain:write": true,
-		"workflow:read": true,
-		"hitl:read":     true, "hitl:write": true,
-	}
-	ownerUserID = strings.TrimSpace(ownerUserID)
+func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform string, principal authctx.Principal, conversationID, message, role string) (response string, convID string, err error) {
+	ownerUserID := strings.TrimSpace(principal.UserID)
 	if ownerUserID == "" {
-		return "", "", fmt.Errorf("robot owner identity is required")
+		return "", "", fmt.Errorf("authenticated robot principal is required")
 	}
-	ctx = authctx.WithPrincipal(ctx, authctx.NewPrincipal(ownerUserID, "robot-service", database.RBACScopeOwn, permissions))
+	if !principal.HasPermission("agent:execute") || !principal.HasPermission("chat:read") || !principal.HasPermission("chat:write") {
+		return "", "", fmt.Errorf("机器人账号缺少 agent:execute、chat:read 或 chat:write 权限")
+	}
+	ctx = authctx.WithPrincipal(ctx, principal)
 	if conversationID == "" {
 		title := safeTruncateString(message, 50)
 		src := "robot"
@@ -753,7 +746,7 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, own
 		}
 		meta := audit.ConversationCreateMeta(src)
 		meta.ProjectID = effectiveProjectID(h.config, "")
-		if meta.ProjectID != "" && !h.db.UserCanAccessResource(ownerUserID, database.RBACScopeOwn, "project", meta.ProjectID) {
+		if meta.ProjectID != "" && (!principal.HasPermission("project:read") || !h.db.UserCanAccessResource(ownerUserID, principal.ScopeFor("project:read"), "project", meta.ProjectID)) {
 			meta.ProjectID = ""
 		}
 		conv, createErr := h.db.CreateConversation(title, meta)
@@ -763,7 +756,7 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, own
 		conversationID = conv.ID
 		_ = h.db.SetResourceOwner("conversation", conversationID, ownerUserID)
 	} else {
-		if _, getErr := h.db.GetConversation(conversationID); getErr != nil || !h.db.UserCanAccessResource(ownerUserID, database.RBACScopeOwn, "conversation", conversationID) {
+		if _, getErr := h.db.GetConversation(conversationID); getErr != nil || !h.db.UserCanAccessResource(ownerUserID, principal.ScopeFor("chat:write"), "conversation", conversationID) {
 			return "", "", fmt.Errorf("对话不存在")
 		}
 	}

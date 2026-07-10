@@ -16,6 +16,7 @@ import (
 	"cyberstrike-ai/internal/agents"
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/knowledge"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
@@ -89,9 +90,30 @@ type ConfigHandler struct {
 	appUpdater                 AppUpdater                 // App更新器（可选）
 	robotRestarter             RobotRestarter             // 机器人连接重启器（可选），ApplyConfig 时重启钉钉/飞书
 	audit                      *audit.Service
+	db                         *database.DB
 	logger                     *zap.Logger
 	mu                         sync.RWMutex
 	lastEmbeddingConfig        *config.EmbeddingConfig // 上一次的嵌入模型配置（用于检测变更）
+}
+
+func (h *ConfigHandler) SetDB(db *database.DB) {
+	h.db = db
+}
+
+func (h *ConfigHandler) validateRobotServiceAccounts(robots config.RobotsConfig) error {
+	if h.db == nil {
+		return fmt.Errorf("RBAC 服务不可用，无法校验机器人服务账号")
+	}
+	for platform, userID := range robots.ServiceAccountUserIDs() {
+		user, err := h.db.GetRBACUserByID(userID)
+		if err != nil {
+			return fmt.Errorf("robots.%s.auth.service_user_id 对应用户不存在", platform)
+		}
+		if !user.Enabled {
+			return fmt.Errorf("robots.%s.auth.service_user_id 对应用户已禁用", platform)
+		}
+	}
+	return nil
 }
 
 // AttackChainUpdater 攻击链处理器更新接口
@@ -824,6 +846,14 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	// 更新机器人配置
 	if req.Robots != nil {
 		if err := config.ValidateWecomConfig(req.Robots.Wecom); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := config.ValidateRobotsAuthorization(*req.Robots); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := h.validateRobotServiceAccounts(*req.Robots); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
