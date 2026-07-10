@@ -24,6 +24,7 @@ import (
 	"cyberstrike-ai/internal/multiagent"
 	"cyberstrike-ai/internal/openai"
 	"cyberstrike-ai/internal/reasoning"
+	"cyberstrike-ai/internal/security"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -844,6 +845,36 @@ func (h *AgentHandler) publishProgressToTaskEventBus(conversationID, eventType, 
 	h.taskEventBus.Publish(conversationID, sseLine)
 }
 
+// enrichProgressEventData 为 SSE / taskEventBus 事件补齐 conversationId、messageId，便于前端懒加载过程详情。
+func enrichProgressEventData(data interface{}, conversationID, assistantMessageID string) interface{} {
+	if strings.TrimSpace(conversationID) == "" && strings.TrimSpace(assistantMessageID) == "" {
+		return data
+	}
+	var m map[string]interface{}
+	switch v := data.(type) {
+	case map[string]interface{}:
+		m = make(map[string]interface{}, len(v)+2)
+		for k, val := range v {
+			m[k] = val
+		}
+	case nil:
+		m = make(map[string]interface{}, 2)
+	default:
+		m = map[string]interface{}{"payload": data}
+	}
+	if id := strings.TrimSpace(assistantMessageID); id != "" {
+		if existing, ok := m["messageId"]; !ok || strings.TrimSpace(fmt.Sprint(existing)) == "" {
+			m["messageId"] = id
+		}
+	}
+	if id := strings.TrimSpace(conversationID); id != "" {
+		if existing, ok := m["conversationId"]; !ok || strings.TrimSpace(fmt.Sprint(existing)) == "" {
+			m["conversationId"] = id
+		}
+	}
+	return m
+}
+
 // createProgressCallback 创建进度回调函数，用于保存processDetails
 // sendEventFunc: 可选的流式事件发送函数，如果为nil则不发送流式事件
 func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun context.CancelCauseFunc, conversationID, assistantMessageID string, sendEventFunc func(eventType, message string, data interface{})) agent.ProgressCallback {
@@ -997,10 +1028,11 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 		// 流式：写 HTTP SSE；非流式（机器人等）：镜像到 taskEventBus 供 Web 订阅。
 		// 工具事件需先落库拿 processDetailId，再向前端发送摘要，避免大 payload 默认进入浏览器。
 		if !deferToolProgressSend {
+			clientData := enrichProgressEventData(data, conversationID, assistantMessageID)
 			if sendEventFunc != nil {
-				sendEventFunc(eventType, message, data)
+				sendEventFunc(eventType, message, clientData)
 			} else {
-				h.publishProgressToTaskEventBus(conversationID, eventType, message, data)
+				h.publishProgressToTaskEventBus(conversationID, eventType, message, clientData)
 			}
 		}
 
@@ -1374,7 +1406,7 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 				h.logger.Warn("保存过程详情失败", zap.Error(err), zap.String("eventType", eventType))
 			}
 			if deferToolProgressSend {
-				clientData := summarizeProcessDetailData(eventType, data)
+				clientData := enrichProgressEventData(summarizeProcessDetailData(eventType, data), conversationID, assistantMessageID)
 				if m, ok := clientData.(map[string]interface{}); ok {
 					m["processDetailId"] = processDetailID
 				}
@@ -1385,7 +1417,7 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 				}
 			}
 		} else if deferToolProgressSend {
-			clientData := summarizeProcessDetailData(eventType, data)
+			clientData := enrichProgressEventData(summarizeProcessDetailData(eventType, data), conversationID, assistantMessageID)
 			if sendEventFunc != nil {
 				sendEventFunc(eventType, message, clientData)
 			} else {
@@ -1682,6 +1714,12 @@ func (h *AgentHandler) CreateBatchQueue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "没有有效的任务"})
 		return
 	}
+	if session, ok := security.CurrentSession(c); ok && h.db != nil && session.Scope != database.RBACScopeAll && strings.TrimSpace(req.ProjectID) != "" {
+		if !h.db.UserCanAccessResource(session.UserID, session.Scope, "project", strings.TrimSpace(req.ProjectID)) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权在该项目下创建批量任务"})
+			return
+		}
+	}
 
 	agentMode := config.NormalizeAgentMode(req.AgentMode)
 	scheduleMode := normalizeBatchQueueScheduleMode(req.ScheduleMode)
@@ -1705,6 +1743,10 @@ func (h *AgentHandler) CreateBatchQueue(c *gin.Context) {
 	if createErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": createErr.Error()})
 		return
+	}
+	if session, ok := security.CurrentSession(c); ok && h.db != nil {
+		_ = h.db.SetResourceOwner("batch_task", queue.ID, session.UserID)
+		_ = h.db.AssignResourceToUser(session.UserID, "batch_task", queue.ID)
 	}
 	started := false
 	if req.ExecuteNow {
@@ -1793,7 +1835,8 @@ func (h *AgentHandler) ListBatchQueues(c *gin.Context) {
 	}
 
 	// 获取队列列表和总数
-	queues, total, err := h.batchTaskManager.ListQueues(limit, offset, status, keyword)
+	session, _ := security.CurrentSession(c)
+	queues, total, err := h.batchTaskManager.ListQueuesForAccess(limit, offset, status, keyword, session.UserID, session.Scope)
 	if err != nil {
 		h.logger.Error("获取批量任务队列列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2261,6 +2304,7 @@ func (h *AgentHandler) loadHistoryFromAgentTrace(conversationID string) ([]agent
 	}
 
 	messageCount := len(messagesArray)
+	modelFacingTrace := agent.IsModelFacingTraceJSON(traceInputJSON)
 
 	h.logger.Info("使用保存的代理轨迹恢复历史上下文",
 		zap.String("conversationId", conversationID),
@@ -2275,6 +2319,7 @@ func (h *AgentHandler) loadHistoryFromAgentTrace(conversationID string) ([]agent
 	agentMessages := make([]agent.ChatMessage, 0, len(messagesArray))
 	for _, msgMap := range messagesArray {
 		msg := agent.ChatMessage{}
+		msg.ModelFacingTrace = modelFacingTrace
 
 		// 解析role
 		if role, ok := msgMap["role"].(string); ok {

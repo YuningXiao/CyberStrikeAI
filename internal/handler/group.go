@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/security"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -152,6 +153,10 @@ func (h *GroupHandler) AddConversationToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !h.groupConversationAllowed(c, req.ConversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	if err := h.db.AddConversationToGroup(req.ConversationID, req.GroupID); err != nil {
 		h.logger.Error("添加对话到分组失败", zap.Error(err))
@@ -166,6 +171,10 @@ func (h *GroupHandler) AddConversationToGroup(c *gin.Context) {
 func (h *GroupHandler) RemoveConversationFromGroup(c *gin.Context) {
 	conversationID := c.Param("conversationId")
 	groupID := c.Param("id")
+	if !h.groupConversationAllowed(c, conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	if err := h.db.RemoveConversationFromGroup(conversationID, groupID); err != nil {
 		h.logger.Error("从分组中移除对话失败", zap.Error(err))
@@ -210,6 +219,9 @@ func (h *GroupHandler) GetGroupConversations(c *gin.Context) {
 	// 获取每个对话在分组中的置顶状态
 	groupConvs := make([]GroupConversation, 0, len(conversations))
 	for _, conv := range conversations {
+		if conv == nil || !h.groupConversationAllowed(c, conv.ID) {
+			continue
+		}
 		// 查询分组内置顶状态
 		var groupPinned int
 		err := h.db.QueryRow(
@@ -242,8 +254,14 @@ func (h *GroupHandler) GetAllMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	filtered := mappings[:0]
+	for _, mapping := range mappings {
+		if h.groupConversationAllowed(c, mapping.ConversationID) {
+			filtered = append(filtered, mapping)
+		}
+	}
 
-	c.JSON(http.StatusOK, mappings)
+	c.JSON(http.StatusOK, filtered)
 }
 
 // UpdateConversationPinnedRequest 更新对话置顶状态请求
@@ -254,6 +272,10 @@ type UpdateConversationPinnedRequest struct {
 // UpdateConversationPinned 更新对话置顶状态
 func (h *GroupHandler) UpdateConversationPinned(c *gin.Context) {
 	conversationID := c.Param("id")
+	if !h.groupConversationAllowed(c, conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	var req UpdateConversationPinnedRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -303,6 +325,10 @@ type UpdateConversationPinnedInGroupRequest struct {
 func (h *GroupHandler) UpdateConversationPinnedInGroup(c *gin.Context) {
 	groupID := c.Param("id")
 	conversationID := c.Param("conversationId")
+	if !h.groupConversationAllowed(c, conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	var req UpdateConversationPinnedInGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -317,4 +343,12 @@ func (h *GroupHandler) UpdateConversationPinnedInGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+}
+
+func (h *GroupHandler) groupConversationAllowed(c *gin.Context, conversationID string) bool {
+	session, ok := security.CurrentSession(c)
+	if !ok {
+		return false
+	}
+	return h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", conversationID)
 }

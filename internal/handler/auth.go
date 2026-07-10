@@ -38,6 +38,7 @@ func NewAuthHandler(manager *security.AuthManager, cfg *config.Config, configPat
 }
 
 type loginRequest struct {
+	Username string `json:"username"`
 	Password string `json:"password" binding:"required"`
 }
 
@@ -54,7 +55,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, expiresAt, err := h.manager.Authenticate(req.Password)
+	token, expiresAt, err := h.manager.Authenticate(req.Username, req.Password)
 	if err != nil {
 		if h.audit != nil {
 			h.audit.Record(c, audit.Entry{
@@ -68,6 +69,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
 	}
+	session, _ := h.manager.ValidateToken(token)
 
 	if h.audit != nil {
 		h.audit.Record(c, audit.Entry{
@@ -86,6 +88,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"token":               token,
 		"expires_at":          expiresAt.UTC().Format(time.RFC3339),
 		"session_duration_hr": h.manager.SessionDurationHours(),
+		"user": gin.H{
+			"id":           session.UserID,
+			"username":     session.Username,
+			"display_name": session.DisplayName,
+		},
+		"roles":       session.Roles,
+		"permissions": permissionKeys(session.Permissions),
+		"scope":       session.Scope,
 	})
 }
 
@@ -139,7 +149,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if !h.manager.CheckPassword(oldPassword) {
+	session, _ := security.CurrentSession(c)
+	if session.Username == "" {
+		session.Username = "admin"
+	}
+	if !h.manager.CheckUserPassword(session.Username, oldPassword) {
 		if h.audit != nil {
 			h.audit.Record(c, audit.Entry{
 				Level:    "warn",
@@ -153,26 +167,34 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := config.PersistAuthPassword(h.configPath, newPassword); err != nil {
-		if h.logger != nil {
-			h.logger.Error("保存新密码失败", zap.Error(err))
+	if session.UserID == "" || session.UserID == "admin" {
+		if err := config.PersistAuthPassword(h.configPath, newPassword); err != nil {
+			if h.logger != nil {
+				h.logger.Error("保存新密码失败", zap.Error(err))
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存新密码失败，请重试"})
+			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存新密码失败，请重试"})
+
+		if err := h.manager.UpdateConfig(newPassword, h.config.Auth.SessionDurationHours); err != nil {
+			if h.logger != nil {
+				h.logger.Error("更新认证配置失败", zap.Error(err))
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新认证配置失败"})
+			return
+		}
+
+		h.config.Auth.Password = newPassword
+		h.config.Auth.GeneratedPassword = ""
+		h.config.Auth.GeneratedPasswordPersisted = false
+		h.config.Auth.GeneratedPasswordPersistErr = ""
+	} else if err := h.manager.UpdateUserPassword(session.UserID, newPassword); err != nil {
+		if h.logger != nil {
+			h.logger.Error("更新用户密码失败", zap.Error(err))
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户密码失败"})
 		return
 	}
-
-	if err := h.manager.UpdateConfig(newPassword, h.config.Auth.SessionDurationHours); err != nil {
-		if h.logger != nil {
-			h.logger.Error("更新认证配置失败", zap.Error(err))
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新认证配置失败"})
-		return
-	}
-
-	h.config.Auth.Password = newPassword
-	h.config.Auth.GeneratedPassword = ""
-	h.config.Auth.GeneratedPasswordPersisted = false
-	h.config.Auth.GeneratedPasswordPersistErr = ""
 
 	if h.logger != nil {
 		h.logger.Info("登录密码已更新，所有会话已失效")
@@ -207,5 +229,23 @@ func (h *AuthHandler) Validate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token":      session.Token,
 		"expires_at": session.ExpiresAt.UTC().Format(time.RFC3339),
+		"user": gin.H{
+			"id":           session.UserID,
+			"username":     session.Username,
+			"display_name": session.DisplayName,
+		},
+		"roles":       session.Roles,
+		"permissions": permissionKeys(session.Permissions),
+		"scope":       session.Scope,
 	})
+}
+
+func permissionKeys(perms map[string]bool) []string {
+	keys := make([]string, 0, len(perms))
+	for key, ok := range perms {
+		if ok {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
