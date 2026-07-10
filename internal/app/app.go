@@ -109,6 +109,12 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	if err := authManager.AttachRBACStore(db); err != nil {
 		return nil, fmt.Errorf("初始化RBAC失败: %w", err)
 	}
+	for platform, userID := range cfg.Robots.ServiceAccountUserIDs() {
+		user, userErr := db.GetRBACUserByID(userID)
+		if userErr != nil || !user.Enabled {
+			return nil, fmt.Errorf("robots.%s.auth.service_user_id 必须指向已启用的 RBAC 用户", platform)
+		}
+	}
 
 	auditSvc := audit.NewService(db, cfg, log.Logger)
 	audit.RegisterConversationCreateHook(auditSvc)
@@ -381,6 +387,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
 	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
 	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
+	configHandler.SetDB(db)
 	configHandler.SetAudit(auditSvc)
 	agentHandler.SetHitlToolWhitelistSaver(configHandler)
 	agentHandler.SetHitlAuditStrategySaver(configHandler)
@@ -413,6 +420,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	conversationHandler.SetTaskStopper(agentHandler)
 	auditHandler := handler.NewAuditHandler(db, auditSvc, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
+	robotHandler.SetAudit(auditSvc)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, conversationHandler, agentHandler)
 
 	// 创建 App 实例（部分字段稍后填充）
@@ -860,6 +868,9 @@ func setupRoutes(
 		authRoutes.POST("/logout", security.AuthMiddleware(authManager), authHandler.Logout)
 		authRoutes.POST("/change-password", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), authHandler.ChangePassword)
 		authRoutes.GET("/validate", security.AuthMiddleware(authManager), authHandler.Validate)
+		authRoutes.POST("/robot-binding-code", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.CreateRobotBindingCode)
+		authRoutes.GET("/robot-bindings", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.ListMyRobotBindings)
+		authRoutes.DELETE("/robot-bindings/:id", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.DeleteMyRobotBinding)
 	}
 
 	// 机器人回调（无需登录，供企业微信/钉钉/飞书服务器调用）
