@@ -32,7 +32,6 @@ type Session struct {
 
 // AuthManager manages password-based authentication and session lifecycle.
 type AuthManager struct {
-	password        string
 	sessionDuration time.Duration
 	db              *database.DB
 
@@ -41,39 +40,49 @@ type AuthManager struct {
 }
 
 // NewAuthManager creates a new AuthManager instance.
-func NewAuthManager(password string, sessionDurationHours int) (*AuthManager, error) {
-	if strings.TrimSpace(password) == "" {
-		return nil, errors.New("auth password must be configured")
-	}
-
+func NewAuthManager(sessionDurationHours int) *AuthManager {
 	if sessionDurationHours <= 0 {
 		sessionDurationHours = 12
 	}
 
 	return &AuthManager{
-		password:        password,
 		sessionDuration: time.Duration(sessionDurationHours) * time.Hour,
 		sessions:        make(map[string]Session),
-	}, nil
+	}
 }
 
-// AttachRBACStore enables multi-user RBAC authentication and bootstraps the
-// built-in admin account from the legacy auth.password value.
-func (a *AuthManager) AttachRBACStore(db *database.DB) error {
+// AttachRBACStore enables multi-user RBAC authentication. When no users exist yet,
+// it bootstraps the built-in admin account and returns the generated initial password.
+func (a *AuthManager) AttachRBACStore(db *database.DB) (generatedAdminPassword string, err error) {
 	if db == nil {
-		return nil
+		return "", errors.New("database is required for authentication")
 	}
-	hash, err := HashPassword(a.password)
+
+	needsAdminPassword, err := db.RBACNeedsAdminPassword()
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := db.BootstrapRBAC(hash, PermissionCatalog); err != nil {
-		return err
+
+	adminPasswordHash := ""
+	if needsAdminPassword {
+		generatedAdminPassword, err = GenerateStrongPassword(24)
+		if err != nil {
+			return "", err
+		}
+		adminPasswordHash, err = HashPassword(generatedAdminPassword)
+		if err != nil {
+			return "", err
+		}
 	}
+
+	if err := db.BootstrapRBAC(adminPasswordHash, PermissionCatalog); err != nil {
+		return "", err
+	}
+
 	a.mu.Lock()
 	a.db = db
 	a.mu.Unlock()
-	return nil
+	return generatedAdminPassword, nil
 }
 
 // Authenticate validates the password and creates a new session.
@@ -94,23 +103,9 @@ func (a *AuthManager) authenticateSession(username, password string) (Session, e
 
 	a.mu.RLock()
 	db := a.db
-	legacyPassword := a.password
 	a.mu.RUnlock()
-
 	if db == nil {
-		if password != legacyPassword {
-			return Session{}, ErrInvalidPassword
-		}
-		return Session{
-			Token:       token,
-			ExpiresAt:   expiresAt,
-			UserID:      "admin",
-			Username:    "admin",
-			DisplayName: "管理员",
-			Roles:       []string{database.RBACSystemRoleAdmin},
-			Permissions: allPermissions(),
-			Scope:       database.RBACScopeAll,
-		}, nil
+		return Session{}, errors.New("authentication store is not configured")
 	}
 
 	username = strings.TrimSpace(strings.ToLower(username))
@@ -187,10 +182,9 @@ func (a *AuthManager) CheckPassword(password string) bool {
 func (a *AuthManager) CheckUserPassword(username, password string) bool {
 	a.mu.RLock()
 	db := a.db
-	legacyPassword := a.password
 	a.mu.RUnlock()
 	if db == nil {
-		return password == legacyPassword
+		return false
 	}
 	user, err := db.GetRBACUserByUsername(username)
 	if err != nil {
@@ -212,7 +206,7 @@ func (a *AuthManager) UpdateUserPassword(userID, password string) error {
 	db := a.db
 	a.mu.RUnlock()
 	if db == nil {
-		return a.UpdateConfig(password, a.SessionDurationHours())
+		return errors.New("authentication store is not configured")
 	}
 	if err := db.UpdateRBACUserPassword(userID, hash); err != nil {
 		return err
@@ -261,41 +255,6 @@ func (a *AuthManager) RevokeAllSessions() {
 // SessionDurationHours returns the configured session duration in hours.
 func (a *AuthManager) SessionDurationHours() int {
 	return int(a.sessionDuration / time.Hour)
-}
-
-// UpdateConfig updates the password and session duration, revoking existing sessions.
-func (a *AuthManager) UpdateConfig(password string, sessionDurationHours int) error {
-	password = strings.TrimSpace(password)
-	if password == "" {
-		return errors.New("auth password must be configured")
-	}
-
-	if sessionDurationHours <= 0 {
-		sessionDurationHours = 12
-	}
-
-	hash := ""
-	if a.db != nil {
-		var err error
-		hash, err = HashPassword(password)
-		if err != nil {
-			return err
-		}
-	}
-
-	a.mu.Lock()
-	a.password = password
-	a.sessionDuration = time.Duration(sessionDurationHours) * time.Hour
-	a.sessions = make(map[string]Session)
-	db := a.db
-	a.mu.Unlock()
-
-	if db != nil {
-		if err := db.UpdateRBACAdminPassword(hash); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func allPermissions() map[string]bool {

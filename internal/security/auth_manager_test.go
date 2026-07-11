@@ -20,11 +20,8 @@ func TestAuthManagerAuthenticatesCreatedRBACUser(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	manager, err := NewAuthManager("admin-secret", 12)
-	if err != nil {
-		t.Fatalf("NewAuthManager: %v", err)
-	}
-	if err := manager.AttachRBACStore(db); err != nil {
+	manager := NewAuthManager(12)
+	if _, err := manager.AttachRBACStore(db); err != nil {
 		t.Fatalf("AttachRBACStore: %v", err)
 	}
 	hash, err := HashPassword("operator-secret")

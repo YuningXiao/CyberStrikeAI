@@ -2,7 +2,6 @@ package config
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"cyberstrike-ai/internal/termout"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,9 +44,8 @@ type Config struct {
 }
 
 type EnsureLocalConfigResult struct {
-	Created           bool
-	GeneratedPassword string
-	ExamplePath       string
+	Created     bool
+	ExamplePath string
 }
 
 const (
@@ -1005,11 +1005,7 @@ func normalizeHitlModeForPrompt(mode string) string {
 }
 
 type AuthConfig struct {
-	Password                    string `yaml:"password" json:"password"`
-	SessionDurationHours        int    `yaml:"session_duration_hours" json:"session_duration_hours"`
-	GeneratedPassword           string `yaml:"-" json:"-"`
-	GeneratedPasswordPersisted  bool   `yaml:"-" json:"-"`
-	GeneratedPasswordPersistErr string `yaml:"-" json:"-"`
+	SessionDurationHours int `yaml:"session_duration_hours" json:"session_duration_hours"`
 }
 
 // MonitorConfig MCP 状态监控（tool_executions）保留策略。
@@ -1169,23 +1165,6 @@ func Load(path string) (*Config, error) {
 	if cfg.Audit.MaxDetailBytes <= 0 {
 		cfg.Audit.MaxDetailBytes = 8192
 	}
-	if strings.TrimSpace(cfg.Auth.Password) == "" {
-		password, err := generateStrongPassword(24)
-		if err != nil {
-			return nil, fmt.Errorf("生成默认密码失败: %w", err)
-		}
-
-		cfg.Auth.Password = password
-		cfg.Auth.GeneratedPassword = password
-
-		if err := PersistAuthPassword(path, password); err != nil {
-			cfg.Auth.GeneratedPasswordPersisted = false
-			cfg.Auth.GeneratedPasswordPersistErr = err.Error()
-		} else {
-			cfg.Auth.GeneratedPasswordPersisted = true
-		}
-	}
-
 	// 如果配置了工具目录，从目录加载工具配置
 	if cfg.Security.ToolsDir != "" {
 		inlineTools := append([]ToolConfig(nil), cfg.Security.Tools...)
@@ -1291,181 +1270,14 @@ func EnsureLocalConfig(path string) (EnsureLocalConfigResult, error) {
 		return EnsureLocalConfigResult{}, fmt.Errorf("创建配置文件失败: %w", err)
 	}
 
-	password, err := generateStrongPassword(24)
-	if err != nil {
-		return EnsureLocalConfigResult{}, fmt.Errorf("生成默认密码失败: %w", err)
-	}
-	if err := PersistAuthPassword(path, password); err != nil {
-		return EnsureLocalConfigResult{}, fmt.Errorf("写入默认密码失败: %w", err)
-	}
-
 	return EnsureLocalConfigResult{
-		Created:           true,
-		GeneratedPassword: password,
-		ExamplePath:       examplePath,
+		Created:     true,
+		ExamplePath: examplePath,
 	}, nil
 }
 
-func generateStrongPassword(length int) (string, error) {
-	if length <= 0 {
-		length = 24
-	}
-
-	bytesLen := length
-	randomBytes := make([]byte, bytesLen)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return "", err
-	}
-
-	password := base64.RawURLEncoding.EncodeToString(randomBytes)
-	if len(password) > length {
-		password = password[:length]
-	}
-	return password, nil
-}
-
-func PersistAuthPassword(path, password string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	inAuthBlock := false
-	authIndent := -1
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !inAuthBlock {
-			if strings.HasPrefix(trimmed, "auth:") {
-				inAuthBlock = true
-				authIndent = len(line) - len(strings.TrimLeft(line, " "))
-			}
-			continue
-		}
-
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		leadingSpaces := len(line) - len(strings.TrimLeft(line, " "))
-		if leadingSpaces <= authIndent {
-			// 离开 auth 块
-			inAuthBlock = false
-			authIndent = -1
-			// 继续寻找其它 auth 块（理论上没有）
-			if strings.HasPrefix(trimmed, "auth:") {
-				inAuthBlock = true
-				authIndent = leadingSpaces
-			}
-			continue
-		}
-
-		if strings.HasPrefix(strings.TrimSpace(line), "password:") {
-			prefix := line[:len(line)-len(strings.TrimLeft(line, " "))]
-			comment := ""
-			if idx := yamlLineCommentIndex(line); idx >= 0 {
-				comment = strings.TrimRight(line[idx:], " ")
-			}
-
-			newLine := fmt.Sprintf("%spassword: %s", prefix, quoteYAMLString(password))
-			if comment != "" {
-				if !strings.HasPrefix(comment, " ") {
-					newLine += " "
-				}
-				newLine += comment
-			}
-			lines[i] = newLine
-			break
-		}
-	}
-
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
-}
-
-func quoteYAMLString(value string) string {
-	node := yaml.Node{
-		Kind:  yaml.ScalarNode,
-		Tag:   "!!str",
-		Style: yaml.DoubleQuotedStyle,
-		Value: value,
-	}
-	data, err := yaml.Marshal(&node)
-	if err != nil {
-		return strconv.Quote(value)
-	}
-	return strings.TrimSuffix(string(data), "\n")
-}
-
-func yamlLineCommentIndex(line string) int {
-	inSingleQuote := false
-	inDoubleQuote := false
-	escaped := false
-
-	for i, r := range line {
-		if inDoubleQuote {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if r == '\\' {
-				escaped = true
-				continue
-			}
-			if r == '"' {
-				inDoubleQuote = false
-			}
-			continue
-		}
-		if inSingleQuote {
-			if r == '\'' {
-				inSingleQuote = false
-			}
-			continue
-		}
-
-		switch r {
-		case '"':
-			inDoubleQuote = true
-		case '\'':
-			inSingleQuote = true
-		case '#':
-			if i == 0 || isYAMLWhitespace(line[i-1]) {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func isYAMLWhitespace(b byte) bool {
-	return b == ' ' || b == '\t'
-}
-
-func PrintGeneratedPasswordWarning(password string, persisted bool, persistErr string) {
-	if strings.TrimSpace(password) == "" {
-		return
-	}
-
-	if persisted {
-		fmt.Println("[CyberStrikeAI] ✅ 已为您自动生成并写入 Web 登录密码。")
-	} else {
-		if persistErr != "" {
-			fmt.Printf("[CyberStrikeAI] ⚠️ 无法自动写入配置文件中的密码: %s\n", persistErr)
-		} else {
-			fmt.Println("[CyberStrikeAI] ⚠️ 无法自动写入配置文件中的密码。")
-		}
-		fmt.Println("请手动将以下随机密码写入 config.yaml 的 auth.password：")
-	}
-
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("CyberStrikeAI Auto-Generated Web Password")
-	fmt.Printf("Password: %s\n", password)
-	fmt.Println("WARNING: Anyone with this password can fully control CyberStrikeAI.")
-	fmt.Println("Please store it securely and change it in config.yaml as soon as possible.")
-	fmt.Println("警告：持有此密码的人将拥有对 CyberStrikeAI 的完全控制权限。")
-	fmt.Println("请妥善保管，并尽快在 config.yaml 中修改 auth.password！")
-	fmt.Println("----------------------------------------------------------------")
+func PrintBootstrapAdminPassword(password string) {
+	termout.PrintBootstrapAdminCredentials(password)
 }
 
 // generateRandomToken 生成用于 MCP 鉴权的随机字符串（64 位十六进制）
