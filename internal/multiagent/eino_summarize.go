@@ -157,6 +157,9 @@ func newEinoSummarizationMiddleware(
 			baseRoot = filepath.Join(filepath.Dir(dbPath), "conversation_artifacts", sanitizeEinoPathSegment(conv), "summarization")
 		}
 		base := baseRoot
+		if abs, err := filepath.Abs(base); err == nil {
+			base = abs
+		}
 		if mkErr := os.MkdirAll(base, 0o755); mkErr == nil {
 			transcriptPath = filepath.Join(base, "transcript.txt")
 		}
