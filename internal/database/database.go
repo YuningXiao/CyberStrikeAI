@@ -325,6 +325,7 @@ func (db *DB) initTables() error {
 		session_key TEXT PRIMARY KEY,
 		conversation_id TEXT NOT NULL,
 		role_name TEXT NOT NULL DEFAULT '默认',
+		agent_mode TEXT NOT NULL DEFAULT 'eino_single',
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 	);`
@@ -750,6 +751,9 @@ func (db *DB) initTables() error {
 	if _, err := db.Exec(createRobotUserSessionsTable); err != nil {
 		return fmt.Errorf("创建robot_user_sessions表失败: %w", err)
 	}
+	if err := db.migrateRobotUserSessionsTable(); err != nil {
+		return fmt.Errorf("迁移robot_user_sessions表失败: %w", err)
+	}
 
 	if _, err := db.Exec(createProjectsTable); err != nil {
 		return fmt.Errorf("创建projects表失败: %w", err)
@@ -870,6 +874,18 @@ func (db *DB) initTables() error {
 	}
 
 	db.logger.Debug("数据库表初始化完成")
+	return nil
+}
+
+func (db *DB) migrateRobotUserSessionsTable() error {
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('robot_user_sessions') WHERE name='agent_mode'").Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		_, err := db.Exec("ALTER TABLE robot_user_sessions ADD COLUMN agent_mode TEXT NOT NULL DEFAULT 'eino_single'")
+		return err
+	}
 	return nil
 }
 
