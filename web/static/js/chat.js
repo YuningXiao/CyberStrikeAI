@@ -1,7 +1,13 @@
 let currentConversationId = null;
 let loadConversationRequestSeq = 0;
 
-/** 轻量会话 LRU 缓存：来回切换已加载会话时避免重复网络 + 全量 DOM 重建 */
+/**
+ * 轻量会话 LRU 缓存。
+ *
+ * 缓存只用作请求失败时的降级数据，不能先于服务端响应直接渲染：
+ * 运行中会话的 process details 会持续写入，直接渲染旧快照会让
+ * UI 暂时回退到旧轮次，等 task-events 接管后又突然跳到最新轮次。
+ */
 const CONVERSATION_LITE_CACHE_MAX = 12;
 const conversationLiteCache = new Map();
 
@@ -4131,32 +4137,24 @@ async function loadConversation(conversationId) {
     const seq = ++loadConversationRequestSeq;
     try {
         const cachedConversation = getConversationLiteFromCache(conversationId);
-        const fetchPromise = apiFetch(`/api/conversations/${conversationId}?include_process_details=0`)
-            .then(async (response) => {
-                const data = await response.json();
-                return { response, data };
-            });
-
-        let conversation;
-        let response;
-        if (cachedConversation) {
+        let conversation = null;
+        let response = null;
+        try {
+            response = await apiFetch(`/api/conversations/${conversationId}?include_process_details=0`);
+            conversation = await response.json();
+        } catch (fetchError) {
+            if (!cachedConversation) throw fetchError;
+            console.warn('加载最新对话失败，使用本地缓存:', fetchError);
             conversation = cachedConversation;
-            fetchPromise.then(({ response: freshResp, data }) => {
-                if (freshResp.ok && data && seq === loadConversationRequestSeq && currentConversationId === conversationId) {
-                    putConversationLiteCache(conversationId, data);
-                }
-            }).catch(() => {});
-        } else {
-            const fetched = await fetchPromise;
-            response = fetched.response;
-            conversation = fetched.data;
-            if (seq !== loadConversationRequestSeq) {
-                return;
-            }
-            if (!response.ok) {
-                showChatToast('加载对话失败: ' + (conversation.error || '未知错误'), 'error');
-                return;
-            }
+        }
+        if (seq !== loadConversationRequestSeq) {
+            return;
+        }
+        if (response && !response.ok) {
+            showChatToast('加载对话失败: ' + (conversation.error || '未知错误'), 'error');
+            return;
+        }
+        if (response && response.ok) {
             putConversationLiteCache(conversationId, conversation);
         }
         if (seq !== loadConversationRequestSeq) {

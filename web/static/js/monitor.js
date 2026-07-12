@@ -319,7 +319,10 @@ function finalizeOutstandingToolCallsForProgress(progressId, finalStatus) {
         if (!mapping) continue;
         if (mapping.progressId != null && String(mapping.progressId) !== pid) continue;
         const tcid = mapping.toolCallId || (String(mapKey).includes('::') ? String(mapKey).split('::').slice(1).join('::') : String(mapKey));
-        updateToolCallStatus(mapping.progressId || progressId, tcid, finalStatus);
+        // 已收到终态结果的调用仅清理索引，不能在任务收尾时被改写成失败。
+        if (!mapping.terminalStatus) {
+            updateToolCallStatus(mapping.progressId || progressId, tcid, finalStatus);
+        }
         toolCallStatusMap.delete(mapKey);
     }
 }
@@ -1866,15 +1869,30 @@ function handleStreamEvent(event, progressElement, progressId,
                     ? String(prevMainIter.workflowNodeId).trim()
                     : '';
                 const curNode = d.workflowNodeId != null ? String(d.workflowNodeId).trim() : '';
+                const prevAgent = prevMainIter && prevMainIter.einoAgent != null
+                    ? String(prevMainIter.einoAgent).trim()
+                    : '';
+                const curAgent = d.einoAgent != null ? String(d.einoAgent).trim() : '';
+                const prevOrchestration = prevMainIter && prevMainIter.orchestration != null
+                    ? String(prevMainIter.orchestration).trim()
+                    : '';
+                const curOrchestration = d.orchestration != null ? String(d.orchestration).trim() : '';
+                const duplicateMainIteration = prevN != null && String(prevN) === String(n) &&
+                    prevNode === curNode && prevAgent === curAgent &&
+                    prevOrchestration === curOrchestration;
                 mainIterationStateByProgressId.set(String(progressId), {
                     iteration: n,
                     orchestration: d.orchestration != null ? d.orchestration : '',
-                    workflowNodeId: curNode
+                    workflowNodeId: curNode,
+                    einoAgent: curAgent
                 });
                 // 主通道进入新轮次或图编排切换到新 Agent 节点后，不复用上一段的流式时间线条目
                 if (prevN != null && (n < prevN || prevN !== n || (curNode && prevNode && curNode !== prevNode))) {
                     clearTimelineStreamStates(progressId);
                 }
+                // 同一主代理可能从“进入模型”和“检测到工具批次”两条路径补发同一轮次。
+                // 状态缓存仍更新，但时间线只保留一个幂等条目。
+                if (duplicateMainIteration) break;
             }
             let iterTitle;
             if (d.orchestration === 'plan_execute' && d.einoScope === 'main') {
@@ -2306,7 +2324,9 @@ function handleStreamEvent(event, progressElement, progressId,
                     const existingItem = document.getElementById(existing.itemId);
                     if (existingItem) {
                         // 同一 toolCallId 的重复 tool_call（重试/补发）只更新状态，不重复追加条目。
-                        updateToolCallStatus(progressId, toolCallId, 'running');
+                        if (!existing.terminalStatus) {
+                            updateToolCallStatus(progressId, toolCallId, 'running');
+                        }
                         break;
                     }
                 }
@@ -2359,7 +2379,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     const mapKey = toolCallMapKey(progressId, resultToolCallId);
                     if (toolCallStatusMap.has(mapKey)) {
                         updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
-                        toolCallStatusMap.delete(mapKey);
+                        toolCallStatusMap.get(mapKey).terminalStatus = success ? 'completed' : 'failed';
                     }
                     break;
                 }
@@ -2367,7 +2387,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     const mapKey = toolCallMapKey(progressId, resultToolCallId);
                     if (toolCallStatusMap.has(mapKey)) {
                         updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
-                        toolCallStatusMap.delete(mapKey);
+                        toolCallStatusMap.get(mapKey).terminalStatus = success ? 'completed' : 'failed';
                     }
                     break;
                 }
@@ -2375,7 +2395,7 @@ function handleStreamEvent(event, progressElement, progressId,
 
             if (resultToolCallId && toolCallStatusMap.has(toolCallMapKey(progressId, resultToolCallId))) {
                 updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
-                toolCallStatusMap.delete(toolCallMapKey(progressId, resultToolCallId));
+                toolCallStatusMap.get(toolCallMapKey(progressId, resultToolCallId)).terminalStatus = success ? 'completed' : 'failed';
             }
             addTimelineItem(timeline, 'tool_result', {
                 title: timelineAgentBracketPrefix(resultInfo) + statusIcon + ' ' + resultExecText,
@@ -3948,6 +3968,25 @@ function isLiveProgressTimeline(timeline) {
     return !!(timeline && timeline.id && /^progress-\d+-\d+-timeline$/.test(timeline.id));
 }
 
+function formatLiveTimelinePrunedMarker(marker) {
+    const count = parseInt(marker.dataset.prunedCount || '0', 10) || 0;
+    const minIteration = parseInt(marker.dataset.prunedMainIterationMin || '0', 10) || 0;
+    const maxIteration = parseInt(marker.dataset.prunedMainIterationMax || '0', 10) || 0;
+    const translate = typeof window.t === 'function' ? window.t : null;
+    const baseText = translate
+        ? translate('chat.liveTimelinePruned', { count: count })
+        : ('已收起前 ' + count + ' 条实时过程详情，任务完成后可按页查看完整记录');
+    if (minIteration <= 0 || maxIteration < minIteration) return baseText;
+    if (minIteration === maxIteration) {
+        return baseText + ' · ' + (translate
+            ? translate('chat.liveTimelinePrunedSingleRound', { n: minIteration })
+            : ('主代理第 ' + minIteration + ' 轮'));
+    }
+    return baseText + ' · ' + (translate
+        ? translate('chat.liveTimelinePrunedRoundRange', { from: minIteration, to: maxIteration })
+        : ('主代理第 ' + minIteration + '–' + maxIteration + ' 轮'));
+}
+
 function pruneLiveTimelineIfNeeded(timeline) {
     if (!isLiveProgressTimeline(timeline)) return;
     const items = Array.from(timeline.children).filter(function (el) {
@@ -3970,16 +4009,37 @@ function pruneLiveTimelineIfNeeded(timeline) {
     if (!marker) {
         marker = document.createElement('div');
         marker.className = 'timeline-live-pruned-marker';
+        marker.setAttribute('role', 'status');
+        marker.setAttribute('aria-live', 'polite');
         timeline.insertBefore(marker, timeline.firstChild);
     }
+    let prunedMainIterationMin = parseInt(marker.dataset.prunedMainIterationMin || '0', 10) || 0;
+    let prunedMainIterationMax = parseInt(marker.dataset.prunedMainIterationMax || '0', 10) || 0;
     for (let i = 0; i < removeCount; i++) {
-        removable[i].remove();
+        const removed = removable[i];
+        if (removed && removed.dataset && removed.dataset.timelineType === 'iteration' &&
+            removed.dataset.einoScope !== 'sub') {
+            const iteration = parseInt(removed.dataset.iterationN || '0', 10) || 0;
+            if (iteration > 0) {
+                if (prunedMainIterationMin === 0 || iteration < prunedMainIterationMin) {
+                    prunedMainIterationMin = iteration;
+                }
+                if (iteration > prunedMainIterationMax) {
+                    prunedMainIterationMax = iteration;
+                }
+            }
+        }
+        removed.remove();
     }
     pruned += removeCount;
     marker.dataset.prunedCount = String(pruned);
-    marker.textContent = typeof window.t === 'function'
-        ? window.t('chat.liveTimelinePruned', { count: pruned })
-        : ('已收起前 ' + pruned + ' 条实时过程详情，任务完成后可按页查看完整记录');
+    marker.dataset.prunedMainIterationMin = String(prunedMainIterationMin);
+    marker.dataset.prunedMainIterationMax = String(prunedMainIterationMax);
+    marker.textContent = formatLiveTimelinePrunedMarker(marker);
+    // 始终放在已保留详情之前；配合 sticky 样式，查看最新内容时也能感知历史已裁剪。
+    if (timeline.firstChild !== marker) {
+        timeline.insertBefore(marker, timeline.firstChild);
+    }
 }
 
 function addTimelineItem(timeline, type, options) {
@@ -4816,7 +4876,7 @@ function updateMonitorTimelineSection() {
 }
 
 
-const MCP_STATS_TOP_N = 6;
+const MCP_STATS_TOP_N = 3;
 const MCP_TIMELINE_RANGES = ['24h', '7d', '30d'];
 
 function getMcpMonitorTimelineRange() {
@@ -6565,8 +6625,7 @@ function refreshProgressAndTimelineI18n() {
     });
 
     document.querySelectorAll('.timeline-live-pruned-marker').forEach(function (marker) {
-        const count = parseInt(marker.dataset.prunedCount || '0', 10) || 0;
-        marker.textContent = _t('chat.liveTimelinePruned', { count: count });
+        marker.textContent = formatLiveTimelinePrunedMarker(marker);
     });
 
     // 详情区「展开/收起」按钮

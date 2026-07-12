@@ -3980,7 +3980,7 @@
                                             <ul class="robot-cmd-list">
                                                 <li><code>身份</code> <code>whoami</code> — <span data-i18n="settingsRobotsExtra.botCmdIdentity">显示平台发送者、鉴权模式及当前实际 RBAC 身份 | Show effective identity</span></li>
                                                 <li><code>绑定 &lt;绑定码&gt;</code> <code>bind &lt;code&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdBindUser">绑定当前平台账号到 RBAC 用户（仅逐用户绑定模式） | Bind RBAC user</span></li>
-                                                <li><code>解绑</code> <code>unbind</code> — <span data-i18n="settingsRobotsExtra.botCmdUnbindUser">解除当前平台账号绑定（仅逐用户绑定模式） | Unbind RBAC user</span></li>
+                                                <li><code>解绑</code> <code>unbind</code> — <span data-i18n="settingsRobotsExtra.botCmdUnbindUser">解除当前平台账号绑定（仅逐用户绑定模式，需确认） | Unbind RBAC user</span></li>
                                             </ul>
                                             <p class="settings-description" data-i18n="settingsRobotsExtra.botAuthHint">专用服务账号模式不接受“绑定/解绑”命令，仅允许机器人配置中白名单内的发送者。</p>
 
@@ -3990,15 +3990,23 @@
                                                 <li><code>切换 &lt;ID&gt;</code> <code>switch &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdSwitch">指定对话继续 | Switch to conversation</span></li>
                                                 <li><code>新对话</code> <code>new</code> — <span data-i18n="settingsRobotsExtra.botCmdNew">开启新对话 | Start new conversation</span></li>
                                                 <li><code>清空</code> <code>clear</code> — <span data-i18n="settingsRobotsExtra.botCmdClear">清空当前上下文 | Clear context</span></li>
-                                                <li><code>当前</code> <code>current</code> — <span data-i18n="settingsRobotsExtra.botCmdCurrent">显示当前对话、角色与项目 | Show current conversation</span></li>
+                                                <li><code>状态</code> <code>status</code> — <span data-i18n="settingsRobotsExtra.botCmdStatus">汇总当前对话、模式、角色与项目 | Show current status</span></li>
+                                                <li><code>任务</code> <code>task</code> — <span data-i18n="settingsRobotsExtra.botCmdTask">查看当前任务状态与运行时长 | Show current task</span></li>
+                                                <li><code>重命名 &lt;名称&gt;</code> <code>rename &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdRename">修改当前对话标题 | Rename conversation</span></li>
                                                 <li><code>停止</code> <code>stop</code> — <span data-i18n="settingsRobotsExtra.botCmdStop">中断当前任务 | Stop running task</span></li>
-                                                <li><code>删除 &lt;ID&gt;</code> <code>delete &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdDelete">删除指定对话 | Delete conversation</span></li>
+                                                <li><code>删除 &lt;ID&gt;</code> <code>delete &lt;ID&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdDelete">删除指定对话（需确认） | Delete conversation</span></li>
                                             </ul>
 
                                             <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryRole">角色</p>
                                             <ul class="robot-cmd-list">
                                                 <li><code>角色</code> <code>roles</code> — <span data-i18n="settingsRobotsExtra.botCmdRoles">列出所有可用角色 | List roles</span></li>
                                                 <li><code>角色 &lt;名&gt;</code> <code>role &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdRole">切换当前角色 | Switch role</span></li>
+                                            </ul>
+
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryMode">模式</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>模式</code> <code>modes</code> — <span data-i18n="settingsRobotsExtra.botCmdModes">列出对话模式与当前选择 | List conversation modes</span></li>
+                                                <li><code>模式 &lt;名称&gt;</code> <code>mode &lt;name&gt;</code> — <span data-i18n="settingsRobotsExtra.botCmdMode">切换对话模式 | Switch conversation mode</span></li>
                                             </ul>
 
                                             <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryProject">项目</p>
@@ -4009,6 +4017,13 @@
                                                 <li><code>解除项目</code> <code>unbind project</code> — <span data-i18n="settingsRobotsExtra.botCmdUnbindProject">解除当前对话的项目绑定 | Unbind project</span></li>
                                             </ul>
 
+                                            <p class="robot-cmd-category" data-i18n="settingsRobotsExtra.botCmdCategoryDiagnostics">诊断与安全</p>
+                                            <ul class="robot-cmd-list">
+                                                <li><code>权限</code> <code>permissions</code> — <span data-i18n="settingsRobotsExtra.botCmdPermissions">查看当前业务权限 | Show effective permissions</span></li>
+                                                <li><code>诊断</code> <code>doctor</code> — <span data-i18n="settingsRobotsExtra.botCmdDoctor">检查关键配置状态 | Check configuration status</span></li>
+                                                <li><code>确认</code> <code>confirm</code> / <code>取消</code> <code>cancel</code> — <span data-i18n="settingsRobotsExtra.botCmdConfirmation">确认或取消高风险操作 | Confirm or cancel risky action</span></li>
+                                            </ul>
+
                                             <p class="settings-description robot-cmd-footer" data-i18n="settingsRobotsExtra.botCommandsFooter">除以上命令外，直接输入内容将按绑定用户或服务账号的实时 RBAC 权限发送给 AI。Otherwise, text is sent to AI under the effective RBAC identity.</p>
                                         </div>
                                     </div>
@@ -4017,7 +4032,7 @@
                                 <div class="settings-subsection robot-command-entry">
                                     <div class="robot-command-entry-copy">
                                         <h4 data-i18n="settingsRobotsExtra.botCommandsTitle">机器人命令说明</h4>
-                                        <p class="settings-description" data-i18n="settingsRobotsExtra.botCommandsEntryDesc">查看机器人对话中可用的中英文命令，包括身份鉴权、对话、角色和项目操作。</p>
+                                        <p class="settings-description" data-i18n="settingsRobotsExtra.botCommandsEntryDesc">查看机器人对话中可用的中英文命令，包括身份鉴权、对话、角色、模式、项目和安全诊断。</p>
                                     </div>
                                     <button type="button" class="btn-secondary" onclick="openRobotCommandsModal()" data-i18n="settingsRobotsExtra.viewAllCommands">查看全部命令</button>
                                 </div>

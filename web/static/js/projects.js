@@ -1178,7 +1178,7 @@ function renderGraphEdgesListHtml(factKey, graphData, selectedEdgeId) {
             const synthetic = isSyntheticGraphEdge(e);
             const deleteBtn = synthetic
                 ? `<span class="project-fact-graph-edge-synthetic" title="${escapeHtml(tp('projects.graphEdgeSynthetic'))}">—</span>`
-                : `<button type="button" class="project-fact-graph-edge-delete" data-edge-id="${escapeHtml(e.id)}" onclick="event.stopPropagation(); deleteProjectFactEdge(this.dataset.edgeId)" title="${escapeHtml(tp('projects.graphDeleteEdge'))}">×</button>`;
+                : `<button type="button" class="project-fact-graph-edge-delete" data-edge-id="${escapeHtml(e.id)}" onclick="event.stopPropagation(); deleteProjectFactEdge(this.dataset.edgeId)" title="${escapeHtml(tp('projects.graphDeleteEdge'))}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
             return `<div class="project-fact-graph-edge-item${selected}" data-edge-id="${escapeHtml(e.id)}" onclick="focusProjectFactGraphEdge(${JSON.stringify(e.id)})">
                 <span class="project-fact-graph-edge-dir">${escapeHtml(dirLabel)}</span>
                 <span class="project-fact-graph-edge-type">${escapeHtml(e.type || '')}</span>
@@ -2675,15 +2675,31 @@ function initChatProjectSelector() {
     });
 }
 
+function initProjectGraphFooterWheelScroll() {
+    const footer = document.querySelector('.project-fact-graph-footer');
+    if (!footer || footer.dataset.wheelScrollBound === 'true') return;
+    footer.dataset.wheelScrollBound = 'true';
+    footer.addEventListener('wheel', (event) => {
+        if (footer.scrollWidth <= footer.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        const maxScrollLeft = footer.scrollWidth - footer.clientWidth;
+        const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, footer.scrollLeft + event.deltaY));
+        if (nextScrollLeft === footer.scrollLeft) return;
+        footer.scrollLeft = nextScrollLeft;
+        event.preventDefault();
+    }, { passive: false });
+}
+
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         initChatProjectSelector();
         initProjectListActionMenu();
+        initProjectGraphFooterWheelScroll();
         refreshProjectsFilterSelects();
     });
 } else {
     initChatProjectSelector();
     initProjectListActionMenu();
+    initProjectGraphFooterWheelScroll();
     refreshProjectsFilterSelects();
 }
 

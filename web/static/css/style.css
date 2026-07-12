@@ -5366,12 +5366,17 @@ html[data-theme="dark"] .user-menu-dropdown {
 }
 
 .timeline-live-pruned-marker {
+    position: sticky;
+    top: 0;
+    z-index: 3;
     margin: 8px 0;
     padding: 8px 12px;
     border: 1px dashed rgba(148, 163, 184, 0.35);
     border-radius: 6px;
     color: var(--text-muted);
     background: rgba(148, 163, 184, 0.08);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
     font-size: 0.8125rem;
 }
 
@@ -11507,27 +11512,35 @@ html[data-theme="dark"] .robot-binding-one-time-badge {
     display: flex;
     gap: 6px;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     flex: 1 1 auto;
     flex-wrap: nowrap;
+    padding: 1px 1px 3px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 
 .mcp-stats-timeline-moment {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-width: 0;
-    max-width: 144px;
+    min-width: 156px;
+    max-width: none;
     padding: 4px 8px;
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.08);
     color: #1d4ed8;
     font-size: 0.6875rem;
     font-weight: 600;
-    flex: 0 0 auto;
+    flex: 1 0 156px;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .mcp-stats-timeline-moment__time {
+    min-width: 0;
+    flex: 1 1 auto;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -11544,6 +11557,7 @@ html[data-theme="dark"] .robot-binding-one-time-badge {
     color: #fff;
     background: #2563eb;
     box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.04);
+    flex: 0 0 auto;
 }
 
 .mcp-stats-timeline-moment__fail {
@@ -11557,12 +11571,16 @@ html[data-theme="dark"] .robot-binding-one-time-badge {
     font-size: 0.625rem;
     font-weight: 700;
     white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .mcp-stats-timeline-moment--more {
+    min-width: 42px;
     color: var(--text-secondary);
     background: rgba(148, 163, 184, 0.14);
     font-weight: 700;
+    flex: 0 0 auto;
+    justify-content: center;
 }
 
 .mcp-stats-timeline__chart-wrap {
@@ -11632,7 +11650,8 @@ html[data-theme="dark"] .robot-binding-one-time-badge {
     }
     .mcp-stats-timeline-moments__list {
         flex-wrap: nowrap;
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
     }
 }
 
@@ -30291,7 +30310,7 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     position: relative;
     z-index: 20;
     margin: 0;
-    padding: 10px 0 12px;
+    padding: 6px 0;
     background: var(--bg-primary);
     border-top: 1px solid var(--border-color);
 }
@@ -30351,23 +30370,27 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
 }
 .projects-graph-legend {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: flex-end;
     gap: 8px 14px;
 }
 .projects-graph-legend-group {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex: 0 0 auto;
     align-items: center;
     gap: 6px 10px;
 }
 .projects-graph-legend-heading {
+    flex: 0 0 auto;
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #94a3b8;
+    white-space: nowrap;
 }
 .projects-graph-legend-divider {
     display: inline-block;
@@ -30378,10 +30401,12 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
 }
 .projects-graph-legend-item {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 6px;
     font-size: 0.75rem;
     color: #64748b;
+    white-space: nowrap;
 }
 .projects-graph-legend-item--edge i {
     display: inline-block;
@@ -30619,8 +30644,8 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     color: #64748b;
 }
 .project-fact-graph-edges-wrap {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 0 auto;
+    min-height: min-content;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -30643,8 +30668,8 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     overflow-wrap: anywhere;
 }
 .project-fact-graph-edges-list {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 1 auto;
+    max-height: 180px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -30715,6 +30740,11 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     cursor: pointer;
     flex-shrink: 0;
 }
+.project-fact-graph-edge-delete svg {
+    display: block;
+    flex: 0 0 auto;
+    pointer-events: none;
+}
 .project-fact-graph-edge-delete:hover {
     background: #fef2f2;
     border-color: #f87171;
@@ -30764,6 +30794,7 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     color: #94a3b8;
 }
 .project-fact-graph-sidebar-actions {
+    flex: 0 0 auto;
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
@@ -30772,24 +30803,31 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
 }
 .project-fact-graph-footer {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
-    gap: 8px 12px;
-    margin: 10px 0 0;
+    gap: 12px;
+    margin: 0;
     flex: 0 0 auto;
     flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+.project-fact-graph-footer::-webkit-scrollbar {
+    display: none;
 }
 .project-fact-graph-stats {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
     margin: 0;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
 }
 .projects-graph-stat-badge {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 4px;
     font-size: 0.8125rem;
@@ -30798,6 +30836,7 @@ html[data-theme="dark"] .chat-files-toast.chat-toast--error {
     border: 1px solid #e2e8f0;
     padding: 4px 12px;
     border-radius: 999px;
+    white-space: nowrap;
 }
 .projects-graph-stat-badge strong {
     font-size: 0.9375rem;
