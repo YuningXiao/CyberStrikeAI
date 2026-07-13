@@ -66,6 +66,7 @@ type App struct {
 	slackCancel        context.CancelFunc        // Slack Socket Mode 取消函数
 	discordCancel      context.CancelFunc        // Discord Gateway 取消函数
 	qqCancel           context.CancelFunc        // QQ WebSocket 取消函数
+	alertCancel        context.CancelFunc        // 漏洞提醒持久化投递 worker
 	c2Manager          *c2.Manager               // C2 管理器（未启用 C2 时为 nil）
 	c2Watchdog         *c2.SessionWatchdog       // C2 会话看门狗
 	c2WatchdogCancel   context.CancelFunc        // 看门狗取消函数
@@ -416,6 +417,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	auditHandler := handler.NewAuditHandler(db, auditSvc, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
 	robotHandler.SetAudit(auditSvc)
+	db.SetVulnerabilityCreatedHook(robotHandler.NotifyNewVulnerability)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, conversationHandler, agentHandler)
 
 	// 创建 App 实例（部分字段稍后填充）
@@ -444,6 +446,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	}
 	// 飞书/钉钉长连接（无需公网），启用时在后台启动；后续前端应用配置时会通过 RestartRobotConnections 重启
 	app.startRobotConnections()
+	alertCtx, alertCancel := context.WithCancel(context.Background())
+	app.alertCancel = alertCancel
+	go robotHandler.RunVulnerabilityAlertWorker(alertCtx)
 
 	// 设置漏洞工具注册器（内置工具，必须设置）
 	vulnerabilityRegistrar := func() error {
@@ -705,6 +710,10 @@ func (a *App) Shutdown() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = einoobserve.ShutdownOtel(shutdownCtx)
 	shutdownCancel()
+	if a.alertCancel != nil {
+		a.alertCancel()
+		a.alertCancel = nil
+	}
 
 	// 停止钉钉/飞书长连接
 	a.robotMu.Lock()
@@ -1194,6 +1203,8 @@ func setupRoutes(
 		protected.DELETE("/vulnerabilities/batch", vulnerabilityHandler.BatchDeleteVulnerabilities)
 		protected.GET("/vulnerabilities/filter-options", vulnerabilityHandler.GetVulnerabilityFilterOptions)
 		protected.GET("/vulnerabilities/stats", vulnerabilityHandler.GetVulnerabilityStats)
+		protected.GET("/vulnerability-alerts/subscription", vulnerabilityHandler.GetMyAlertSubscription)
+		protected.PUT("/vulnerability-alerts/subscription", vulnerabilityHandler.UpdateMyAlertSubscription)
 		protected.GET("/vulnerabilities/:id", vulnerabilityHandler.GetVulnerability)
 		protected.POST("/vulnerabilities", vulnerabilityHandler.CreateVulnerability)
 		protected.PUT("/vulnerabilities/:id", vulnerabilityHandler.UpdateVulnerability)
