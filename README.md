@@ -7,11 +7,9 @@
 
 [中文](README_CN.md) | [English](README.md)
 
-**CyberStrikeAI is building the agentic execution layer for modern cyber security.**
+**The system of action for AI-native cybersecurity—where intent becomes governed execution, evidence becomes operational memory, and every operation improves the next.**
 
-It brings AI agents, security tools, MCP-native integrations, knowledge systems, human oversight, and attack-chain intelligence into a unified workspace for authorized cyber engagements. Instead of treating tools, prompts, evidence, approvals, and reports as separate fragments, CyberStrikeAI turns security intent into auditable multi-agent workflows that can plan, execute, review, replay, and continuously accumulate operational context.
-
-Built in Go, CyberStrikeAI provides a full-stack foundation for AI-native security operations: 100+ curated tool recipes, role-based testing, Agent Skills, Eino-powered single-agent and multi-agent orchestration, RAG knowledge retrieval, graph workflows, vulnerability and task lifecycle management, WebShell operations, chatbot access, and a lightweight built-in C2 framework for authorized lab and engagement scenarios.
+CyberStrikeAI connects planning, execution, human oversight, evidence, and replay in one auditable workspace. Built in Go, it combines Eino-powered agents, MCP-native tools, RAG knowledge, graph workflows, and attack-chain intelligence for authorized security operations.
 
 **Start here:** [Quick start](#quick-start-one-command-deployment) · [Documentation](docs/en-US/README.md) · [Security hardening](docs/en-US/security-hardening.md)
 
@@ -404,5 +402,4 @@ For vulnerability reporting and deployment hardening guidance, see [SECURITY.md]
 ---
 
 Need help or want to contribute? Open an issue or PR—community tooling additions are welcome!
-
 
