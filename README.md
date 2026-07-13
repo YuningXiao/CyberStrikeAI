@@ -7,36 +7,16 @@
 
 [中文](README_CN.md) | [English](README.md)
 
-**Community**: [Join us on Discord](https://discord.gg/8PjVCMu8Zw)
-
 **CyberStrikeAI is building the agentic execution layer for modern cyber security.**
 
 It brings AI agents, security tools, MCP-native integrations, knowledge systems, human oversight, and attack-chain intelligence into a unified workspace for authorized cyber engagements. Instead of treating tools, prompts, evidence, approvals, and reports as separate fragments, CyberStrikeAI turns security intent into auditable multi-agent workflows that can plan, execute, review, replay, and continuously accumulate operational context.
 
 Built in Go, CyberStrikeAI provides a full-stack foundation for AI-native security operations: 100+ curated tool recipes, role-based testing, Agent Skills, Eino-powered single-agent and multi-agent orchestration, RAG knowledge retrieval, graph workflows, vulnerability and task lifecycle management, WebShell operations, chatbot access, and a lightweight built-in C2 framework for authorized lab and engagement scenarios.
 
-**Start here:** [Quick start](#quick-start-one-command-deployment) · [Documentation](docs/en-US/README.md) · [Production deployment](docs/en-US/deployment.md) · [API recipes](docs/en-US/api-recipes.md) · [Security hardening](docs/en-US/security-hardening.md)
+**Start here:** [Quick start](#quick-start-one-command-deployment) · [Documentation](docs/en-US/README.md) · [Security hardening](docs/en-US/security-hardening.md)
 
 > [!IMPORTANT]
 > Use CyberStrikeAI only on systems you own or are explicitly authorized to test. For shared or production environments, review the [security model](docs/en-US/security-model.md) and [hardening guide](docs/en-US/security-hardening.md) before enabling high-risk tools, WebShell, or C2 capabilities.
-
-<details>
-<summary><strong>WeChat group</strong> (click to reveal QR code)</summary>
-
-<img src="./images/wechat-group-cyberstrikeai-qr.jpg" alt="CyberStrikeAI WeChat group QR code" width="280">
-
-</details>
-
-<details>
-<summary><strong>Sponsorship</strong> (click to expand)</summary>
-
-If CyberStrikeAI helps you, you can support the project via **WeChat Pay** or **Alipay**:
-
-<div align="center">
-  <img src="./images/sponsor-wechat-alipay-qr.jpg" alt="WeChat Pay and Alipay sponsorship QR codes" width="480">
-</div>
-
-</details>
 
 ## Interface & Integration Preview
 
@@ -183,6 +163,9 @@ CyberStrikeAI includes optional integrations under `plugins/`.
 
 CyberStrikeAI ships with 100+ curated tools covering the whole kill chain:
 
+<details>
+<summary><strong>View the complete tool categories</strong></summary>
+
 - **Network Scanners** – nmap, masscan, rustscan, arp-scan, nbtscan
 - **Web & App Scanners** – sqlmap, nikto, dirb, gobuster, feroxbuster, ffuf, httpx
 - **Vulnerability Scanners** – nuclei, wpscan, wafw00f, dalfox, xsser
@@ -198,6 +181,10 @@ CyberStrikeAI ships with 100+ curated tools covering the whole kill chain:
 - **Post-Exploitation** – linpeas, winpeas, mimikatz, bloodhound, impacket, responder
 - **CTF Utilities** – stegsolve, zsteg, hash-identifier, fcrackzip, pdfcrack, cyberchef
 - **System Helpers** – exec, create-file, delete-file, list-files, modify-file
+
+</details>
+
+See [tools/README_EN.md](tools/README_EN.md) for tool definitions, customization, and usage notes.
 
 ## Basic Usage
 
@@ -221,6 +208,12 @@ The `run.sh` script will automatically:
 - ✅ Download Go dependencies
 - ✅ Build the project
 - ✅ Start the server
+
+**Verify the startup:**
+
+1. Confirm the terminal displays `● ONLINE` followed by the actual Web UI URL.
+2. Open that URL; the default HTTPS mode uses a local self-signed certificate, so accept the browser warning once.
+3. On a new installation, store the one-time `admin` password shown under `ADMIN SETUP REQUIRED`, sign in, and change it immediately.
 
 **Networking defaults:** `run.sh` starts the server with **`--https`** and the repo **`config.yaml`** (local self-signed TLS; better for many concurrent streams). Use **`./run.sh --http`** for plain HTTP. In production, set **`server.tls_cert_path`** / **`server.tls_key_path`** in **`config.yaml`** (see comments there). For manual runs, add **`--https`** or **`CYBERSTRIKE_HTTPS=1`**; if **`-config`** is wrong, the binary prints a short usage hint on stderr.
 
@@ -365,6 +358,26 @@ CyberStrikeAI has joined [404Starlink](https://github.com/knownsec/404StarLink)
 
 ---
 
+## Community and Support
+
+- Join the community on [Discord](https://discord.gg/8PjVCMu8Zw).
+
+<details>
+<summary><strong>WeChat group</strong></summary>
+
+<img src="./images/wechat-group-cyberstrikeai-qr.jpg" alt="CyberStrikeAI WeChat group QR code" width="280">
+
+</details>
+
+<details>
+<summary><strong>Sponsorship via WeChat Pay or Alipay</strong></summary>
+
+<div align="center">
+  <img src="./images/sponsor-wechat-alipay-qr.jpg" alt="WeChat Pay and Alipay sponsorship QR codes" width="480">
+</div>
+
+</details>
+
 ## License
 
 CyberStrikeAI is licensed under the Apache License 2.0.  
@@ -391,4 +404,5 @@ For vulnerability reporting and deployment hardening guidance, see [SECURITY.md]
 ---
 
 Need help or want to contribute? Open an issue or PR—community tooling additions are welcome!
+
 

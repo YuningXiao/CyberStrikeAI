@@ -6,36 +6,16 @@
 
 [中文](README_CN.md) | [English](README.md)
 
-**社区**：[加入 Discord](https://discord.gg/8PjVCMu8Zw)
-
 **CyberStrikeAI 正在构建现代网络安全的智能体执行层。**
 
 它将 AI 智能体、安全工具、MCP 原生集成、知识系统、人工监督与攻击链智能汇聚到一个面向授权安全任务的统一工作空间中。CyberStrikeAI 不再把工具、提示词、证据、审批和报告视为割裂环节，而是将安全意图转化为可规划、可执行、可审查、可复盘、可持续沉淀上下文的多智能体工作流。
 
 CyberStrikeAI 基于 Go 构建，为 AI 原生安全运营提供完整底座：100+ 精选工具配方、角色化测试、Agent Skills、基于 Eino 的单智能体与多智能体编排、RAG 知识检索、图工作流、漏洞与任务生命周期管理、WebShell 运营、机器人接入，以及面向授权实验室和安全任务场景的内置轻量 C2 框架。
 
-**从这里开始：** [快速上手](#快速上手一条命令部署) · [中文文档](docs/zh-CN/README.md) · [生产部署](docs/zh-CN/deployment.md) · [API 示例](docs/zh-CN/api-recipes.md) · [安全加固](docs/zh-CN/security-hardening.md)
+**从这里开始：** [快速上手](#快速上手一条命令部署) · [中文文档](docs/zh-CN/README.md) · [安全加固](docs/zh-CN/security-hardening.md)
 
 > [!IMPORTANT]
 > 仅可对自有系统或已获得明确授权的目标使用 CyberStrikeAI。在共享或生产环境启用高风险工具、WebShell 或 C2 前，请先阅读[安全模型](docs/zh-CN/security-model.md)和[安全加固指南](docs/zh-CN/security-hardening.md)。
-
-<details>
-<summary><strong>微信群</strong>（点击展开二维码）</summary>
-
-<img src="./images/wechat-group-cyberstrikeai-qr.jpg" alt="CyberStrikeAI 微信群二维码" width="280">
-
-</details>
-
-<details>
-<summary><strong>赞助</strong>（点击展开）</summary>
-
-若 CyberStrikeAI 对您有帮助，可通过 **微信支付** 或 **支付宝** 赞助项目：
-
-<div align="center">
-  <img src="./images/sponsor-wechat-alipay-qr.jpg" alt="微信与支付宝赞助二维码" width="480">
-</div>
-
-</details>
 
 ## 界面与集成预览
 
@@ -182,6 +162,9 @@ CyberStrikeAI 基于 Go 构建，为 AI 原生安全运营提供完整底座：1
 
 系统预置 100+ 渗透/攻防工具，覆盖完整攻击链：
 
+<details>
+<summary><strong>查看完整工具分类</strong></summary>
+
 - **网络扫描**：nmap、masscan、rustscan、arp-scan、nbtscan
 - **Web 应用扫描**：sqlmap、nikto、dirb、gobuster、feroxbuster、ffuf、httpx
 - **漏洞扫描**：nuclei、wpscan、wafw00f、dalfox、xsser
@@ -197,6 +180,10 @@ CyberStrikeAI 基于 Go 构建，为 AI 原生安全运营提供完整底座：1
 - **后渗透**：linpeas、winpeas、mimikatz、bloodhound、impacket、responder
 - **CTF 实用工具**：stegsolve、zsteg、hash-identifier、fcrackzip、pdfcrack、cyberchef
 - **系统辅助**：exec、create-file、delete-file、list-files、modify-file
+
+</details>
+
+工具定义、自定义方式与使用说明见 [tools/README.md](tools/README.md)。
 
 ## 基础使用
 
@@ -220,6 +207,12 @@ chmod +x run.sh && ./run.sh
 - ✅ 下载 Go 依赖模块
 - ✅ 编译构建项目
 - ✅ 启动服务器
+
+**验证是否启动成功：**
+
+1. 确认终端显示 `● ONLINE`，并在其后给出实际 Web UI 地址。
+2. 打开该地址；默认 HTTPS 使用本地自签证书，首次访问需接受一次浏览器证书提示。
+3. 全新安装时，妥善保存 `ADMIN SETUP REQUIRED` 下仅展示一次的 `admin` 密码，登录后立即修改。
 
 **网络默认：** `run.sh` 会以 **`--https`** 并传入项目根 **`config.yaml`** 启动（本机自签证书，多路流式场景更稳）。只要明文 HTTP 用 **`./run.sh --http`**。生产环境在 **`config.yaml`** 的 **`server.tls_cert_path` / `server.tls_key_path`** 配正式证书（见文件内注释）。手动启动可加 **`--https`** 或环境变量 **`CYBERSTRIKE_HTTPS=1`**；`-config` 写错时程序会在终端提示正确写法。
 
@@ -361,6 +354,26 @@ CyberStrikeAI 现已加入 [404星链计划](https://github.com/knownsec/404Star
 
 ---
 
+## 社区与支持
+
+- 在 [Discord](https://discord.gg/8PjVCMu8Zw) 加入社区。
+
+<details>
+<summary><strong>微信群</strong></summary>
+
+<img src="./images/wechat-group-cyberstrikeai-qr.jpg" alt="CyberStrikeAI 微信群二维码" width="280">
+
+</details>
+
+<details>
+<summary><strong>通过微信支付或支付宝赞助</strong></summary>
+
+<div align="center">
+  <img src="./images/sponsor-wechat-alipay-qr.jpg" alt="微信与支付宝赞助二维码" width="480">
+</div>
+
+</details>
+
 ## 许可证
 
 CyberStrikeAI 采用 **Apache License 2.0** 开源许可。  
@@ -387,4 +400,5 @@ CyberStrikeAI 是一个专业的安全测试平台，旨在帮助安全研究人
 ---
 
 欢迎提交 Issue/PR 贡献新的工具模版或优化建议！
+
 
