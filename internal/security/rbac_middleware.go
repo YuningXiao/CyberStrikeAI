@@ -151,6 +151,9 @@ func permissionForRequest(method, fullPath string) string {
 		return crudPermission(method, "knowledge")
 	case strings.HasPrefix(path, "/vulnerabilities"):
 		return crudPermission(method, "vulnerability")
+	case strings.HasPrefix(path, "/vulnerability-alerts"):
+		// This endpoint only changes the authenticated user's own preference.
+		return "vulnerability:read"
 	case strings.HasPrefix(path, "/projects"):
 		return crudPermission(method, "project")
 	case strings.HasPrefix(path, "/webshell"):
