@@ -887,8 +887,7 @@ func (c OpenAIReasoningConfig) AllowClientReasoningEffective() bool {
 }
 
 type FofaConfig struct {
-	// Email 为 FOFA 账号邮箱；APIKey 为 FOFA API Key（建议使用只读权限的 Key）
-	Email   string `yaml:"email,omitempty" json:"email,omitempty"`
+	// APIKey 为 FOFA API Key（建议使用只读权限的 Key）
 	APIKey  string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
 	BaseURL string `yaml:"base_url,omitempty" json:"base_url,omitempty"` // 默认 https://fofa.info/api/v1/search/all
 }
