@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -82,5 +83,117 @@ func TestSafeFofaRequestErrorDoesNotExposeURLOrAPIKey(t *testing.T) {
 	}
 	if strings.Contains(message, "secret-api-key") || strings.Contains(message, secretURL) {
 		t.Fatalf("safe error exposed request URL or API key: %q", message)
+	}
+}
+
+func TestShodanSearchReportsShortfallWhenTotalExceedsMatches(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("SHODAN_API_KEY", "")
+
+	shodanServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/shodan/host/search" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("key"); got != "test-shodan-key" {
+			t.Fatalf("Shodan key = %q, want test-shodan-key", got)
+		}
+		page := r.URL.Query().Get("page")
+		count := 0
+		switch page {
+		case "1":
+			count = 100
+		case "2":
+			count = 3
+		default:
+			count = 0
+		}
+		matches := make([]map[string]interface{}, 0, count)
+		for i := 0; i < count; i++ {
+			matches = append(matches, map[string]interface{}{
+				"ip_str": fmt.Sprintf("192.0.2.%d", i+1),
+				"port":   80,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"total":   104,
+			"matches": matches,
+		})
+	}))
+	defer shodanServer.Close()
+
+	h := NewFofaHandler(&config.Config{
+		Shodan: config.SpaceSearchConfig{
+			BaseURL: shodanServer.URL,
+			APIKey:  "test-shodan-key",
+		},
+	}, zap.NewNop())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	body := `{"provider":"shodan","query":"product:nginx","fields":"ip_str,port","size":1000,"page":1}`
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/fofa/search", strings.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	h.Search(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Search() status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var response fofaSearchResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Total != 104 || response.ResultsCount != 103 {
+		t.Fatalf("counts: total=%d results_count=%d, want 104/103", response.Total, response.ResultsCount)
+	}
+	if response.ExpectedCount != 104 || response.Shortfall != 1 {
+		t.Fatalf("shortfall: expected=%d shortfall=%d, want 104/1", response.ExpectedCount, response.Shortfall)
+	}
+	if response.Warning == "" {
+		t.Fatal("warning should explain shortfall")
+	}
+}
+
+func TestExtractInfoCollectJSONObject(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "plain json",
+			in:   `{"query":"title:\"CyberStrikeAI\"","warnings":[]}`,
+			want: `{"query":"title:\"CyberStrikeAI\"","warnings":[]}`,
+		},
+		{
+			name: "fenced json",
+			in:   "```json\n{\"query\":\"product:nginx\"}\n```",
+			want: `{"query":"product:nginx"}`,
+		},
+		{
+			name: "prefixed explanation",
+			in:   "解析结果如下：\n{\"query\":\"ssl.cert.subject.cn:example.com\",\"explanation\":\"ok\"}\n请确认。",
+			want: `{"query":"ssl.cert.subject.cn:example.com","explanation":"ok"}`,
+		},
+		{
+			name: "braces inside string",
+			in:   "结果：{\"query\":\"title:\\\"{admin}\\\"\",\"warnings\":[\"check\"]}",
+			want: `{"query":"title:\"{admin}\"","warnings":["check"]}`,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := extractInfoCollectJSONObject(tc.in)
+			if err != nil {
+				t.Fatalf("extractInfoCollectJSONObject() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("extractInfoCollectJSONObject() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

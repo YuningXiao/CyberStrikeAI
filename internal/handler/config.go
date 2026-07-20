@@ -258,17 +258,20 @@ func (h *ConfigHandler) ApplyWechatRobotBinding(wc config.RobotWechatConfig) err
 
 // GetConfigResponse 获取配置响应
 type GetConfigResponse struct {
-	OpenAI     config.OpenAIConfig     `json:"openai"`
-	Vision     config.VisionConfig     `json:"vision"`
-	FOFA       config.FofaConfig       `json:"fofa"`
-	MCP        config.MCPConfig        `json:"mcp"`
-	Tools      []ToolConfigInfo        `json:"tools"`
-	Agent      config.AgentConfig      `json:"agent"`
-	Hitl       config.HitlConfig       `json:"hitl,omitempty"`
-	Knowledge  config.KnowledgeConfig  `json:"knowledge"`
-	Robots     config.RobotsConfig     `json:"robots,omitempty"`
-	MultiAgent config.MultiAgentPublic `json:"multi_agent,omitempty"`
-	C2         config.C2Public         `json:"c2"`
+	OpenAI     config.OpenAIConfig      `json:"openai"`
+	Vision     config.VisionConfig      `json:"vision"`
+	FOFA       config.FofaConfig        `json:"fofa"`
+	ZoomEye    config.SpaceSearchConfig `json:"zoomeye"`
+	Quake      config.SpaceSearchConfig `json:"quake"`
+	Shodan     config.SpaceSearchConfig `json:"shodan"`
+	MCP        config.MCPConfig         `json:"mcp"`
+	Tools      []ToolConfigInfo         `json:"tools"`
+	Agent      config.AgentConfig       `json:"agent"`
+	Hitl       config.HitlConfig        `json:"hitl,omitempty"`
+	Knowledge  config.KnowledgeConfig   `json:"knowledge"`
+	Robots     config.RobotsConfig      `json:"robots,omitempty"`
+	MultiAgent config.MultiAgentPublic  `json:"multi_agent,omitempty"`
+	C2         config.C2Public          `json:"c2"`
 }
 
 // ToolConfigInfo 工具配置信息
@@ -363,6 +366,9 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		OpenAI:     h.config.OpenAI,
 		Vision:     h.config.Vision,
 		FOFA:       h.config.FOFA,
+		ZoomEye:    h.config.ZoomEye,
+		Quake:      h.config.Quake,
+		Shodan:     h.config.Shodan,
 		MCP:        h.config.MCP,
 		Tools:      tools,
 		Agent:      h.config.Agent,
@@ -703,6 +709,9 @@ type UpdateConfigRequest struct {
 	OpenAI     *config.OpenAIConfig        `json:"openai,omitempty"`
 	Vision     *config.VisionConfig        `json:"vision,omitempty"`
 	FOFA       *config.FofaConfig          `json:"fofa,omitempty"`
+	ZoomEye    *config.SpaceSearchConfig   `json:"zoomeye,omitempty"`
+	Quake      *config.SpaceSearchConfig   `json:"quake,omitempty"`
+	Shodan     *config.SpaceSearchConfig   `json:"shodan,omitempty"`
 	MCP        *config.MCPConfig           `json:"mcp,omitempty"`
 	Tools      []ToolEnableStatus          `json:"tools,omitempty"`
 	Agent      *AgentConfigUpdate          `json:"agent,omitempty"`
@@ -776,6 +785,18 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	if req.FOFA != nil {
 		h.config.FOFA = *req.FOFA
 		h.logger.Info("更新FOFA配置", zap.String("base_url", h.config.FOFA.BaseURL))
+	}
+	if req.ZoomEye != nil {
+		h.config.ZoomEye = *req.ZoomEye
+		h.logger.Info("更新ZoomEye配置", zap.String("base_url", h.config.ZoomEye.BaseURL))
+	}
+	if req.Quake != nil {
+		h.config.Quake = *req.Quake
+		h.logger.Info("更新Quake配置", zap.String("base_url", h.config.Quake.BaseURL))
+	}
+	if req.Shodan != nil {
+		h.config.Shodan = *req.Shodan
+		h.logger.Info("更新Shodan配置", zap.String("base_url", h.config.Shodan.BaseURL))
 	}
 
 	// 更新MCP配置
@@ -1601,6 +1622,9 @@ func (h *ConfigHandler) saveConfig() error {
 	updateOpenAIConfig(root, h.config.OpenAI)
 	updateVisionConfig(root, h.config.Vision)
 	updateFOFAConfig(root, h.config.FOFA)
+	updateSpaceSearchConfig(root, "zoomeye", h.config.ZoomEye)
+	updateSpaceSearchConfig(root, "quake", h.config.Quake)
+	updateSpaceSearchConfig(root, "shodan", h.config.Shodan)
 	updateKnowledgeConfig(root, h.config.Knowledge)
 	updateC2Config(root, h.config.C2)
 	updateRobotsConfig(root, h.config.Robots)
@@ -1790,6 +1814,13 @@ func updateFOFAConfig(doc *yaml.Node, cfg config.FofaConfig) {
 	setStringInMap(fofaNode, "base_url", cfg.BaseURL)
 	removeKeyFromMap(fofaNode, "email")
 	setStringInMap(fofaNode, "api_key", cfg.APIKey)
+}
+
+func updateSpaceSearchConfig(doc *yaml.Node, key string, cfg config.SpaceSearchConfig) {
+	root := doc.Content[0]
+	node := ensureMap(root, key)
+	setStringInMap(node, "base_url", cfg.BaseURL)
+	setStringInMap(node, "api_key", cfg.APIKey)
 }
 
 func updateKnowledgeConfig(doc *yaml.Node, cfg config.KnowledgeConfig) {
