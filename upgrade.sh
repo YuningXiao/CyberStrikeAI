@@ -278,6 +278,7 @@ sync_code() {
   rsync_excludes+=( "--exclude=.upgrade-backup/" )
   rsync_excludes+=( "--exclude=config.yaml" )
   rsync_excludes+=( "--exclude=data/" )
+  rsync_excludes+=( "--exclude=tmp/" )
 
   if [[ "$PRESERVE_VENV" -eq 1 ]]; then
     rsync_excludes+=( "--exclude=venv/" )
@@ -408,4 +409,3 @@ main() {
 }
 
 main "$@"
-
