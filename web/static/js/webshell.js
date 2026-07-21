@@ -1947,9 +1947,20 @@ function buildWebshellTimelineItemFromDetail(detail) {
             : ((typeof window.t === 'function') ? window.t('chat.callTool', { name: tn, index: idx, total: total }) : ('调用: ' + tn + (total ? ' (' + idx + '/' + total + ')' : '')));
         title = ap + '🔧 ' + wsCallTitle;
     } else if (eventType === 'tool_result') {
-        var success = data.success !== false;
         var tname = data.toolName || '工具';
-        title = ap + (success ? '✅ ' : '❌ ') + ((typeof window.t === 'function') ? (success ? window.t('chat.toolExecComplete', { name: tname }) : window.t('chat.toolExecFailed', { name: tname })) : (tname + (success ? ' 执行完成' : ' 执行失败')));
+        var wsNoResultText = (typeof window.t === 'function') ? window.t('timeline.noResult') : '无结果';
+        var wsResult = data.result != null ? data.result : (data.error != null ? data.error : (data.resultPreview != null ? data.resultPreview : wsNoResultText));
+        var wsResultStr = (typeof wsResult === 'string') ? wsResult : JSON.stringify(wsResult);
+        var wsDisplayState = (typeof window.getToolResultDisplayState === 'function')
+            ? window.getToolResultDisplayState(data, { rawText: wsResultStr })
+            : { kind: ((data.isError || data.success === false) ? 'error' : 'success'), isError: (data.isError || data.success === false) };
+        var wsBackgroundRunning = wsDisplayState.kind === 'background_running';
+        var success = !wsDisplayState.isError && !wsBackgroundRunning;
+        var wsIcon = wsBackgroundRunning ? '⏳ ' : (success ? '✅ ' : '❌ ');
+        var wsLabel = wsBackgroundRunning
+            ? (((typeof window.getBackgroundRunningToolLabel === 'function') ? window.getBackgroundRunningToolLabel() : '后台执行中') + ': ' + tname)
+            : ((typeof window.t === 'function') ? (success ? window.t('chat.toolExecComplete', { name: tname }) : window.t('chat.toolExecFailed', { name: tname })) : (tname + (success ? ' 执行完成' : ' 执行失败')));
+        title = ap + wsIcon + wsLabel;
     } else if (eventType === 'eino_agent_reply') {
         title = ap + '💬 ' + ((typeof window.t === 'function') ? window.t('chat.einoAgentReplyTitle') : '子代理回复');
     } else if (eventType === 'progress') {
@@ -1978,13 +1989,16 @@ function buildWebshellTimelineItemFromDetail(detail) {
     if (eventType === 'tool_call' && data && data._mergedResult && typeof window.buildToolResultSectionHtml === 'function') {
         html += '<div class="webshell-ai-timeline-msg tool-result-slot">' + window.buildToolResultSectionHtml(data._mergedResult) + '</div>';
     } else if (eventType === 'tool_result' && data) {
-        var isError = data.isError || data.success === false;
         var noResultText = (typeof window.t === 'function') ? window.t('timeline.noResult') : '无结果';
-        var result = data.result != null ? data.result : (data.error != null ? data.error : noResultText);
+        var result = data.result != null ? data.result : (data.error != null ? data.error : (data.resultPreview != null ? data.resultPreview : noResultText));
         var resultStr = (typeof result === 'string') ? result : JSON.stringify(result);
+        var displayState = (typeof window.getToolResultDisplayState === 'function')
+            ? window.getToolResultDisplayState(data, { rawText: resultStr })
+            : { kind: ((data.isError || data.success === false) ? 'error' : 'success'), isError: (data.isError || data.success === false) };
         var execResultLabel = (typeof window.t === 'function') ? window.t('timeline.executionResult') : '执行结果:';
         var execIdLabel = (typeof window.t === 'function') ? window.t('timeline.executionId') : '执行ID:';
-        html += '<div class="webshell-ai-timeline-msg"><div class="tool-result-section ' + (isError ? 'error' : 'success') + '"><strong>' + escapeHtml(execResultLabel) + '</strong><pre class="tool-result">' + escapeHtml(resultStr) + '</pre>' + (data.executionId ? '<div class="tool-execution-id"><span>' + escapeHtml(execIdLabel) + '</span> <code>' + escapeHtml(String(data.executionId)) + '</code></div>' : '') + '</div></div>';
+        var sectionClass = displayState.kind === 'background_running' ? 'pending' : (displayState.isError ? 'error' : 'success');
+        html += '<div class="webshell-ai-timeline-msg"><div class="tool-result-section ' + sectionClass + '"><strong>' + escapeHtml(execResultLabel) + '</strong><pre class="tool-result">' + escapeHtml(resultStr) + '</pre>' + (data.executionId ? '<div class="tool-execution-id"><span>' + escapeHtml(execIdLabel) + '</span> <code>' + escapeHtml(String(data.executionId)) + '</code></div>' : '') + '</div></div>';
     } else if (detail.message && detail.message !== title) {
         html += '<div class="webshell-ai-timeline-msg">' + escapeHtml(detail.message) + '</div>';
     }
@@ -3140,14 +3154,17 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
             html += '<div class="webshell-ai-timeline-msg"><pre style="white-space:pre-wrap;">' + escapeHtml(message) + '</pre></div>';
         } else if (type === 'tool_result' && data) {
             // 工具调用出参
-            var isError = data.isError || data.success === false;
             var noResultText = (typeof window.t === 'function') ? window.t('timeline.noResult') : '无结果';
-            var result = data.result != null ? data.result : (data.error != null ? data.error : noResultText);
+            var result = data.result != null ? data.result : (data.error != null ? data.error : (data.resultPreview != null ? data.resultPreview : noResultText));
             var resultStr = (typeof result === 'string') ? result : JSON.stringify(result);
+            var displayState = (typeof window.getToolResultDisplayState === 'function')
+                ? window.getToolResultDisplayState(data, { rawText: resultStr })
+                : { kind: ((data.isError || data.success === false) ? 'error' : 'success'), isError: (data.isError || data.success === false) };
             var execResultLabel = (typeof window.t === 'function') ? window.t('timeline.executionResult') : '执行结果:';
             var execIdLabel = (typeof window.t === 'function') ? window.t('timeline.executionId') : '执行ID:';
+            var sectionClass = displayState.kind === 'background_running' ? 'pending' : (displayState.isError ? 'error' : 'success');
             html += '<div class="webshell-ai-timeline-msg"><div class="tool-result-section ' +
-                (isError ? 'error' : 'success') +
+                sectionClass +
                 '"><strong>' + escapeHtml(execResultLabel) + '</strong><pre class="tool-result">' +
                 escapeHtml(resultStr) +
                 '</pre>' +

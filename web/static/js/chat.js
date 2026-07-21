@@ -2821,9 +2821,18 @@ function renderProcessDetails(messageId, processDetails, options) {
             itemTitle = agPx + '🔧 ' + callTitle;
         } else if (eventType === 'tool_result') {
             const toolName = data.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
-            const success = data.success !== false;
-            const statusIcon = success ? '✅' : '❌';
-            const execText = success ? (typeof window.t === 'function' ? window.t('chat.toolExecComplete', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行完成') : (typeof window.t === 'function' ? window.t('chat.toolExecFailed', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行失败');
+            const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
+            const result = data.result != null ? data.result : (data.error != null ? data.error : (data.resultPreview != null ? data.resultPreview : noResultText));
+            const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+            const displayState = typeof window.getToolResultDisplayState === 'function'
+                ? window.getToolResultDisplayState(data, { rawText: resultStr })
+                : { kind: (data.success !== false ? 'success' : 'error'), isError: data.success === false };
+            const backgroundRunning = displayState.kind === 'background_running';
+            const success = !displayState.isError && !backgroundRunning;
+            const statusIcon = backgroundRunning ? '⏳' : (success ? '✅' : '❌');
+            const execText = backgroundRunning
+                ? ((typeof window.getBackgroundRunningToolLabel === 'function' ? window.getBackgroundRunningToolLabel() : '后台执行中') + ': ' + escapeHtml(toolName))
+                : (success ? (typeof window.t === 'function' ? window.t('chat.toolExecComplete', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行完成') : (typeof window.t === 'function' ? window.t('chat.toolExecFailed', { name: escapeHtml(toolName) }) : '工具 ' + escapeHtml(toolName) + ' 执行失败'));
             let execLine = statusIcon + ' ' + execText;
             if (toolName === BuiltinTools.SEARCH_KNOWLEDGE_BASE && success) {
                 execLine = '📚 ' + execLine + ' - ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrievalTag') : '知识检索');
@@ -2862,11 +2871,17 @@ function renderProcessDetails(messageId, processDetails, options) {
             processDetailId: detail.id || '',
             createdAt: detail.createdAt
         };
-        if (eventType === 'tool_call' && detail.id && toolStatusByProcessDetailId.has(String(detail.id))) {
-            timelineOpts.toolStatus = toolStatusByProcessDetailId.get(String(detail.id));
-        }
         if (eventType === 'tool_call' && data._mergedResult) {
             timelineOpts.mergedResult = data._mergedResult;
+            if (typeof window.getToolResultDisplayState === 'function') {
+                const displayState = window.getToolResultDisplayState(data._mergedResult);
+                if (displayState && displayState.kind === 'background_running') {
+                    timelineOpts.toolStatus = 'background_running';
+                }
+            }
+        }
+        if (!timelineOpts.toolStatus && eventType === 'tool_call' && detail.id && toolStatusByProcessDetailId.has(String(detail.id))) {
+            timelineOpts.toolStatus = toolStatusByProcessDetailId.get(String(detail.id));
         }
         const itemId = addTimelineItem(timeline, eventType, timelineOpts);
         if (prependMode && itemId) {
@@ -3537,11 +3552,14 @@ async function fetchProcessDetailDataForModal(detailId) {
 
 function processToolResultToMCPResult(resultData, rawText) {
     if (!resultData) return null;
-    const isError = !!(resultData.isError || resultData.success === false);
+    const displayState = typeof window.getToolResultDisplayState === 'function'
+        ? window.getToolResultDisplayState(resultData, { rawText: rawText })
+        : { kind: ((resultData.isError || resultData.success === false) ? 'error' : 'success'), isError: !!(resultData.isError || resultData.success === false) };
+    const isError = !!displayState.isError;
     let text = rawText;
     if (text == null || String(text) === '') {
         const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
-        const result = resultData.result != null ? resultData.result : (resultData.error != null ? resultData.error : noResultText);
+        const result = resultData.result != null ? resultData.result : (resultData.error != null ? resultData.error : (resultData.resultPreview != null ? resultData.resultPreview : noResultText));
         text = typeof result === 'string' ? result : JSON.stringify(result);
     }
     return {
@@ -3577,10 +3595,16 @@ async function showMCPDetailFromProcessToolItem(messageElement, summary, index) 
         resultData = await fetchProcessDetailDataForModal(resultDetailId);
     }
     const toolName = (summary && summary.toolName) || target.dataset.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
-    const success = resultData ? !(resultData.isError || resultData.success === false) : target.dataset.toolSuccess !== '0';
-    const status = resultData || target.classList.contains('tool-call-completed') || target.classList.contains('tool-call-failed')
-        ? (success ? 'completed' : 'failed')
-        : 'running';
+    const displayState = resultData && typeof window.getToolResultDisplayState === 'function'
+        ? window.getToolResultDisplayState(resultData, { rawText: rawText })
+        : null;
+    const backgroundRunning = (displayState && displayState.kind === 'background_running') || target.dataset.toolDisplayStatus === 'background_running';
+    const success = resultData ? !(displayState ? displayState.isError : (resultData.isError || resultData.success === false)) : target.dataset.toolSuccess !== '0';
+    const status = backgroundRunning
+        ? 'background_running'
+        : (resultData || target.classList.contains('tool-call-completed') || target.classList.contains('tool-call-failed')
+            ? (success ? 'completed' : 'failed')
+            : 'running');
     const exec = {
         id: (resultData && resultData.executionId) || (summary && summary.executionId) || '',
         toolName: toolName,
@@ -3898,7 +3922,8 @@ function renderMCPDetailModal(exec) {
     const statusEl = document.getElementById('detail-status');
     const normalizedStatus = (exec.status || 'unknown').toLowerCase();
     statusEl.textContent = getStatusText(exec.status);
-    statusEl.className = `status-chip status-${normalizedStatus}`;
+    const statusClass = normalizedStatus === 'background_running' ? 'running' : normalizedStatus;
+    statusEl.className = `status-chip status-${statusClass}`;
     try {
         statusEl.dataset.detailStatus = (exec.status || '') + '';
     } catch (e) { /* ignore */ }
@@ -3960,7 +3985,7 @@ function renderMCPDetailModal(exec) {
             setMCPResultDetailTabs('success', true);
         }
     } else {
-        if (normalizedStatus === 'running') {
+        if (normalizedStatus === 'running' || normalizedStatus === 'background_running') {
             responseElement.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.runningNoResponseYet') : '尚无返回，工具可能仍在执行。若长时间无响应，可在下方终止本次调用。';
         } else {
             responseElement.textContent = typeof window.t === 'function' ? window.t('chat.noResponseData') : '暂无响应数据';
@@ -3971,7 +3996,7 @@ function renderMCPDetailModal(exec) {
     const abortSection = document.getElementById('detail-abort-section');
     const abortBtn = document.getElementById('detail-abort-btn');
     if (abortSection && abortBtn) {
-        if (normalizedStatus === 'running' && exec.id) {
+        if ((normalizedStatus === 'running' || normalizedStatus === 'background_running') && exec.id) {
             abortSection.style.display = 'block';
             abortBtn.dataset.execId = exec.id || '';
             abortBtn.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.abortBtn') : '终止工具';

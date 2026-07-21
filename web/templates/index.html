@@ -1510,8 +1510,11 @@
                                                 <option value="all" data-i18n="mcp.filterAll">全部</option>
                                                 <option value="completed" data-i18n="mcpMonitor.statusCompleted">已完成</option>
                                                 <option value="running" data-i18n="mcpMonitor.statusRunning">执行中</option>
+                                                <option value="queued" data-i18n="mcpMonitor.statusQueued">排队中</option>
                                                 <option value="failed" data-i18n="mcpMonitor.statusFailed">失败</option>
+                                                <option value="hard_timeout" data-i18n="mcpMonitor.statusHardTimeout">执行超时</option>
                                                 <option value="cancelled" data-i18n="mcpMonitor.statusCancelled">已终止</option>
+                                                <option value="orphaned" data-i18n="mcpMonitor.statusOrphaned">孤儿任务</option>
                                             </select>
                                         </label>
                                     </div>
@@ -3542,6 +3545,31 @@
                                         <div class="form-group">
                                             <label for="agent-max-iterations" data-i18n="settingsBasic.maxIterations">最大迭代次数</label>
                                             <input type="number" id="agent-max-iterations" min="1" data-i18n="settingsBasic.iterationsPlaceholder" data-i18n-attr="placeholder" placeholder="30" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-tool-wait-timeout-seconds" data-i18n="settingsBasic.toolWaitTimeoutSeconds">外部 MCP 单轮等待秒数</label>
+                                            <input type="number" id="agent-tool-wait-timeout-seconds" min="0" step="1" placeholder="60" />
+                                            <small class="form-hint" data-i18n="settingsBasic.toolWaitTimeoutSecondsHint">Agent 等待工具的单轮上限；到时返回 execution_id，worker 继续后台执行，可用 wait_tool_execution 继续等待。0 表示等到完成。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-external-mcp-concurrency-server" data-i18n="settingsBasic.externalMcpConcurrencyServer">单 MCP 并发上限</label>
+                                            <input type="number" id="agent-external-mcp-concurrency-server" min="-1" step="1" placeholder="2" />
+                                            <small class="form-hint" data-i18n="settingsBasic.externalMcpConcurrencyServerHint">每个外部 MCP server 同时运行的工具数；0 使用默认 2，-1 不限制。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-external-mcp-concurrency-total" data-i18n="settingsBasic.externalMcpConcurrencyTotal">外部 MCP 全局并发上限</label>
+                                            <input type="number" id="agent-external-mcp-concurrency-total" min="-1" step="1" placeholder="16" />
+                                            <small class="form-hint" data-i18n="settingsBasic.externalMcpConcurrencyTotalHint">所有外部 MCP 工具的总并发；0 使用默认 16，-1 不限制。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-external-mcp-circuit-threshold" data-i18n="settingsBasic.externalMcpCircuitThreshold">MCP 熔断失败阈值</label>
+                                            <input type="number" id="agent-external-mcp-circuit-threshold" min="-1" step="1" placeholder="3" />
+                                            <small class="form-hint" data-i18n="settingsBasic.externalMcpCircuitThresholdHint">同一 MCP server 连续失败达到阈值后临时熔断；0 使用默认 3，-1 关闭熔断。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-external-mcp-circuit-cooldown" data-i18n="settingsBasic.externalMcpCircuitCooldown">MCP 熔断冷却秒数</label>
+                                            <input type="number" id="agent-external-mcp-circuit-cooldown" min="0" step="1" placeholder="60" />
+                                            <small class="form-hint" data-i18n="settingsBasic.externalMcpCircuitCooldownHint">server 熔断后的等待时间；0 使用默认 60 秒。</small>
                                         </div>
                                         <div class="form-group">
                                             <label class="checkbox-label">

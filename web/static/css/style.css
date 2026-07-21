@@ -14014,14 +14014,29 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     color: var(--accent-color);
 }
 
+.monitor-status-chip.queued {
+    background: rgba(124, 58, 237, 0.12);
+    color: #7c3aed;
+}
+
 .monitor-status-chip.failed {
     background: rgba(220, 53, 69, 0.12);
     color: var(--error-color);
 }
 
+.monitor-status-chip.hard_timeout {
+    background: rgba(245, 158, 11, 0.14);
+    color: #b45309;
+}
+
 .monitor-status-chip.cancelled {
     background: rgba(108, 117, 125, 0.15);
     color: var(--text-muted, #6c757d);
+}
+
+.monitor-status-chip.orphaned {
+    background: rgba(100, 116, 139, 0.14);
+    color: #64748b;
 }
 
 .monitor-execution-actions .btn-monitor-abort {

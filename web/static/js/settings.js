@@ -757,6 +757,22 @@ async function loadConfig(loadTools = true, options = {}) {
         
         // 填充Agent配置
         document.getElementById('agent-max-iterations').value = currentConfig.agent.max_iterations || 30;
+        const toolWaitTimeoutEl = document.getElementById('agent-tool-wait-timeout-seconds');
+        if (toolWaitTimeoutEl) {
+            const v = currentConfig.agent.tool_wait_timeout_seconds;
+            toolWaitTimeoutEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '60';
+        }
+        [
+            ['agent-external-mcp-concurrency-server', 'external_mcp_max_concurrent_per_server', '2'],
+            ['agent-external-mcp-concurrency-total', 'external_mcp_max_concurrent_total', '16'],
+            ['agent-external-mcp-circuit-threshold', 'external_mcp_circuit_failure_threshold', '3'],
+            ['agent-external-mcp-circuit-cooldown', 'external_mcp_circuit_cooldown_seconds', '60']
+        ].forEach(([id, key, fallback]) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const v = currentConfig.agent[key];
+            el.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : fallback;
+        });
 
         const ma = currentConfig.multi_agent || {};
         const maEn = document.getElementById('multi-agent-enabled');
@@ -1941,7 +1957,12 @@ async function applySettings() {
                 audit_agent_prompt_review_edit: document.getElementById('hitl-audit-agent-prompt-review-edit-settings')?.value.trim() || ''
             },
             agent: {
-                max_iterations: parseInt(document.getElementById('agent-max-iterations').value) || 30
+                max_iterations: parseInt(document.getElementById('agent-max-iterations').value) || 30,
+                tool_wait_timeout_seconds: Math.max(0, parseInt(document.getElementById('agent-tool-wait-timeout-seconds')?.value || '60', 10) || 0),
+                external_mcp_max_concurrent_per_server: parseInt(document.getElementById('agent-external-mcp-concurrency-server')?.value || '2', 10) || 0,
+                external_mcp_max_concurrent_total: parseInt(document.getElementById('agent-external-mcp-concurrency-total')?.value || '16', 10) || 0,
+                external_mcp_circuit_failure_threshold: parseInt(document.getElementById('agent-external-mcp-circuit-threshold')?.value || '3', 10) || 0,
+                external_mcp_circuit_cooldown_seconds: Math.max(0, parseInt(document.getElementById('agent-external-mcp-circuit-cooldown')?.value || '60', 10) || 0)
             },
             multi_agent: (function () {
                 const peRaw = document.getElementById('multi-agent-pe-loop')?.value;
