@@ -1892,6 +1892,7 @@ function getCurrentRole() {
 // 暴露函数到全局作用域
 if (typeof window !== 'undefined') {
     window.getCurrentRole = getCurrentRole;
+    window.setCurrentRole = handleRoleChange;
     window.toggleRoleSelectionPanel = toggleRoleSelectionPanel;
     window.closeRoleSelectionPanel = closeRoleSelectionPanel;
     window.closeRoleSelectModal = closeRoleSelectModal;
@@ -1905,6 +1906,7 @@ if (typeof window !== 'undefined') {
         originalHandleRoleChange(roleName);
         if (typeof window !== 'undefined') {
             window.currentSelectedRole = getCurrentRole();
+            window.setCurrentRole = handleRoleChange;
         }
     };
 }

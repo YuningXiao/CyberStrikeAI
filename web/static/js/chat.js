@@ -4532,6 +4532,10 @@ async function loadConversation(conversationId) {
         // 更新当前对话ID
         currentConversationId = conversationId;
         window._loadedConversationProjectId = conversation.projectId || conversation.project_id || '';
+        const conversationRoleName = conversation.roleName || conversation.role_name || '';
+        if (typeof window.setCurrentRole === 'function') {
+            window.setCurrentRole(conversationRoleName || '默认');
+        }
         try {
             window.currentConversationId = conversationId;
         } catch (e) { /* ignore */ }
