@@ -267,7 +267,8 @@ type ToolStatsSummaryResult struct {
 	TopTools []*mcp.ToolStats
 }
 
-// LoadToolStatsSummary 聚合统计信息，仅返回汇总与 Top N 工具（避免全量 map 传输）
+// LoadToolStatsSummary 聚合统计信息，仅返回汇总与 Top N 工具（避免全量 map 传输）。
+// 监控页的失败口径只包含真实失败/异常终止；用户主动取消的 cancelled 保留在总调用中，不计入失败。
 func (db *DB) LoadToolStatsSummary(topN int) (*ToolStatsSummaryResult, error) {
 	if topN <= 0 {
 		topN = 6
@@ -282,19 +283,19 @@ func (db *DB) LoadToolStatsSummary(topN int) (*ToolStatsSummaryResult, error) {
 
 	summaryQuery := `
 		SELECT COUNT(*),
-			COALESCE(SUM(total_calls), 0),
-			COALESCE(SUM(success_calls), 0),
-			COALESCE(SUM(failed_calls), 0),
-			MAX(last_call_time)
-		FROM tool_stats
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END), 0),
+			MAX(start_time),
+			COUNT(DISTINCT tool_name)
+		FROM tool_executions
 	`
 	var lastCallRaw sql.NullString
 	err := db.QueryRow(summaryQuery).Scan(
-		&result.Summary.ToolCount,
 		&result.Summary.TotalCalls,
 		&result.Summary.SuccessCalls,
 		&result.Summary.FailedCalls,
 		&lastCallRaw,
+		&result.Summary.ToolCount,
 	)
 	if err != nil {
 		return nil, err
@@ -310,9 +311,13 @@ func (db *DB) LoadToolStatsSummary(topN int) (*ToolStatsSummaryResult, error) {
 	}
 
 	topQuery := `
-		SELECT tool_name, total_calls, success_calls, failed_calls, last_call_time
-		FROM tool_stats
-		WHERE total_calls > 0
+		SELECT tool_name,
+			COUNT(*) AS total_calls,
+			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS success_calls,
+			SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END) AS failed_calls,
+			MAX(start_time) AS last_call_time
+		FROM tool_executions
+		GROUP BY tool_name
 		ORDER BY total_calls DESC, tool_name ASC
 		LIMIT ?
 	`
@@ -324,7 +329,7 @@ func (db *DB) LoadToolStatsSummary(topN int) (*ToolStatsSummaryResult, error) {
 
 	for rows.Next() {
 		var stat mcp.ToolStats
-		var lastCallTime sql.NullTime
+		var lastCallTime sql.NullString
 		if err := rows.Scan(
 			&stat.ToolName,
 			&stat.TotalCalls,
@@ -336,7 +341,8 @@ func (db *DB) LoadToolStatsSummary(topN int) (*ToolStatsSummaryResult, error) {
 			continue
 		}
 		if lastCallTime.Valid {
-			stat.LastCallTime = &lastCallTime.Time
+			parsed := parseDBTime(lastCallTime.String)
+			stat.LastCallTime = &parsed
 		}
 		result.TopTools = append(result.TopTools, &stat)
 	}
@@ -359,7 +365,7 @@ func (db *DB) LoadToolStatsSummaryForAccess(topN int, access RBACListAccess) (*T
 	var lastCall sql.NullString
 	err := db.QueryRow(`SELECT COUNT(*),
 		COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN status IN ('failed', 'cancelled', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END), 0),
 		MAX(start_time), COUNT(DISTINCT tool_name)`+fromSQL, args...).Scan(
 		&result.Summary.TotalCalls, &result.Summary.SuccessCalls, &result.Summary.FailedCalls,
 		&lastCall, &result.Summary.ToolCount,
@@ -373,7 +379,7 @@ func (db *DB) LoadToolStatsSummaryForAccess(topN int, access RBACListAccess) (*T
 	}
 	rows, err := db.Query(`SELECT tool_name, COUNT(*),
 		SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),
-		SUM(CASE WHEN status IN ('failed', 'cancelled', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END), MAX(start_time)`+
+		SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END), MAX(start_time)`+
 		fromSQL+` GROUP BY tool_name ORDER BY COUNT(*) DESC, tool_name ASC LIMIT ?`, append(args, topN)...)
 	if err != nil {
 		return nil, err
@@ -815,7 +821,7 @@ func (db *DB) PurgeToolExecutionsBefore(cutoff time.Time) (int64, error) {
 		}
 		delta.totalCalls += count
 		switch status {
-		case "failed", "cancelled", "hard_timeout", "orphaned":
+		case "failed", "hard_timeout", "orphaned":
 			delta.failedCalls += count
 		case "completed":
 			delta.successCalls += count
@@ -971,7 +977,7 @@ func (db *DB) LoadCallsTimeline(since time.Time, dailyBuckets bool) ([]CallsTime
 		query = `
 			SELECT date(start_time, 'localtime') AS bucket,
 				COUNT(*) AS total,
-				SUM(CASE WHEN status IN ('failed', 'cancelled', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END) AS failed
+				SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END) AS failed
 			FROM tool_executions
 			WHERE start_time >= ?
 			GROUP BY bucket
@@ -981,7 +987,7 @@ func (db *DB) LoadCallsTimeline(since time.Time, dailyBuckets bool) ([]CallsTime
 		query = `
 			SELECT strftime('%Y-%m-%d %H:00:00', start_time, 'localtime') AS bucket,
 				COUNT(*) AS total,
-				SUM(CASE WHEN status IN ('failed', 'cancelled', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END) AS failed
+				SUM(CASE WHEN status IN ('failed', 'hard_timeout', 'orphaned') THEN 1 ELSE 0 END) AS failed
 			FROM tool_executions
 			WHERE start_time >= ?
 			GROUP BY bucket

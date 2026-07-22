@@ -602,13 +602,13 @@ func (s *Server) handleCallTool(requestCtx context.Context, msg *Message) *Messa
 		st, msg := executionStatusAndMessage(err)
 		execution.Status = st
 		execution.Error = msg
-		failed = true
+		failed = st != "cancelled"
 	} else if result != nil && result.IsError {
 		if cancelledWithUserNote {
 			execution.Status = "cancelled"
 			execution.Error = ""
 			execution.Result = result
-			failed = true
+			failed = false
 		} else {
 			execution.Status = "failed"
 			if len(result.Content) > 0 {
@@ -930,7 +930,7 @@ func (s *Server) CallTool(ctx context.Context, toolName string, args map[string]
 			return handler(runCtx, args)
 		},
 		OnDone: func(exec *ToolExecution) {
-			failed := exec != nil && exec.Status != ToolExecutionStatusCompleted
+			failed := exec != nil && exec.Status != ToolExecutionStatusCompleted && exec.Status != ToolExecutionStatusCancelled
 			s.updateStats(toolName, failed)
 		},
 	})

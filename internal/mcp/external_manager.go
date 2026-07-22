@@ -745,7 +745,7 @@ func (m *ExternalMCPManager) CallTool(ctx context.Context, toolName string, args
 			return result, callErr
 		},
 		OnDone: func(exec *ToolExecution) {
-			failed := exec != nil && exec.Status != ToolExecutionStatusCompleted
+			failed := exec != nil && exec.Status != ToolExecutionStatusCompleted && exec.Status != ToolExecutionStatusCancelled
 			m.recordExternalMCPResult(mcpName, failed)
 			m.updateStats(toolName, failed)
 		},
