@@ -22,6 +22,7 @@ type Conversation struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	ProjectID string    `json:"projectId,omitempty"`
+	RoleName  string    `json:"roleName,omitempty"`
 	Pinned    bool      `json:"pinned"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -57,29 +58,30 @@ func (db *DB) CreateConversationWithWebshell(webshellConnectionID, title string,
 			return nil, err
 		}
 	}
+	roleName := normalizeConversationRoleName(meta.RoleName)
 
 	var err error
 	wsID := strings.TrimSpace(webshellConnectionID)
 	switch {
 	case wsID != "" && projectID != "":
 		_, err = db.Exec(
-			"INSERT INTO conversations (id, title, created_at, updated_at, webshell_connection_id, project_id) VALUES (?, ?, ?, ?, ?, ?)",
-			id, title, now, now, wsID, projectID,
+			"INSERT INTO conversations (id, title, created_at, updated_at, webshell_connection_id, project_id, role_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			id, title, now, now, wsID, projectID, roleName,
 		)
 	case wsID != "":
 		_, err = db.Exec(
-			"INSERT INTO conversations (id, title, created_at, updated_at, webshell_connection_id) VALUES (?, ?, ?, ?, ?)",
-			id, title, now, now, wsID,
+			"INSERT INTO conversations (id, title, created_at, updated_at, webshell_connection_id, role_name) VALUES (?, ?, ?, ?, ?, ?)",
+			id, title, now, now, wsID, roleName,
 		)
 	case projectID != "":
 		_, err = db.Exec(
-			"INSERT INTO conversations (id, title, created_at, updated_at, project_id) VALUES (?, ?, ?, ?, ?)",
-			id, title, now, now, projectID,
+			"INSERT INTO conversations (id, title, created_at, updated_at, project_id, role_name) VALUES (?, ?, ?, ?, ?, ?)",
+			id, title, now, now, projectID, roleName,
 		)
 	default:
 		_, err = db.Exec(
-			"INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-			id, title, now, now,
+			"INSERT INTO conversations (id, title, created_at, updated_at, role_name) VALUES (?, ?, ?, ?, ?)",
+			id, title, now, now, roleName,
 		)
 	}
 	if err != nil {
@@ -90,6 +92,7 @@ func (db *DB) CreateConversationWithWebshell(webshellConnectionID, title string,
 		ID:        id,
 		Title:     title,
 		ProjectID: projectID,
+		RoleName:  roleName,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -236,10 +239,11 @@ func (db *DB) GetConversation(id string) (*Conversation, error) {
 	var pinned int
 
 	var projectID sql.NullString
+	var roleName sql.NullString
 	err := db.QueryRow(
-		"SELECT id, title, pinned, created_at, updated_at, project_id FROM conversations WHERE id = ?",
+		"SELECT id, title, pinned, created_at, updated_at, project_id, role_name FROM conversations WHERE id = ?",
 		id,
-	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID)
+	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID, &roleName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("对话不存在")
@@ -248,6 +252,9 @@ func (db *DB) GetConversation(id string) (*Conversation, error) {
 	}
 	if projectID.Valid {
 		conv.ProjectID = strings.TrimSpace(projectID.String)
+	}
+	if roleName.Valid {
+		conv.RoleName = normalizeConversationRoleName(roleName.String)
 	}
 
 	// 尝试多种时间格式解析
@@ -322,10 +329,11 @@ func (db *DB) GetConversationLite(id string) (*Conversation, error) {
 	var pinned int
 
 	var projectID sql.NullString
+	var roleName sql.NullString
 	err := db.QueryRow(
-		"SELECT id, title, pinned, created_at, updated_at, project_id FROM conversations WHERE id = ?",
+		"SELECT id, title, pinned, created_at, updated_at, project_id, role_name FROM conversations WHERE id = ?",
 		id,
-	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID)
+	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID, &roleName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("对话不存在")
@@ -334,6 +342,9 @@ func (db *DB) GetConversationLite(id string) (*Conversation, error) {
 	}
 	if projectID.Valid {
 		conv.ProjectID = strings.TrimSpace(projectID.String)
+	}
+	if roleName.Valid {
+		conv.RoleName = normalizeConversationRoleName(roleName.String)
 	}
 
 	// 尝试多种时间格式解析
@@ -363,6 +374,26 @@ func (db *DB) GetConversationLite(id string) (*Conversation, error) {
 	}
 	conv.Messages = messages
 	return &conv, nil
+}
+
+func normalizeConversationRoleName(roleName string) string {
+	roleName = strings.TrimSpace(roleName)
+	if roleName == "" {
+		return "默认"
+	}
+	return roleName
+}
+
+func (db *DB) SetConversationRoleName(id, roleName string) error {
+	roleName = normalizeConversationRoleName(roleName)
+	_, err := db.Exec(
+		"UPDATE conversations SET role_name = ?, updated_at = ? WHERE id = ?",
+		roleName, time.Now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("更新对话角色失败: %w", err)
+	}
+	return nil
 }
 
 func conversationProjectIDColumn(alias string) string {
@@ -489,7 +520,7 @@ func (db *DB) ListConversations(limit, offset int, search, sortBy, projectID str
 		where, args = appendConversationProjectFilter(where, args, projectID, "c")
 		args = append(args, limit, offset)
 		rows, err = db.Query(
-			`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id
+			`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id, c.role_name
 			 FROM conversations c`+where+`
 			 `+orderClause+`
 			 LIMIT ? OFFSET ?`,
@@ -505,7 +536,7 @@ func (db *DB) ListConversations(limit, offset int, search, sortBy, projectID str
 		}
 		args = append(args, limit, offset)
 		rows, err = db.Query(
-			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id FROM conversations"+where+" "+orderClause+" LIMIT ? OFFSET ?",
+			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id, role_name FROM conversations"+where+" "+orderClause+" LIMIT ? OFFSET ?",
 			args...,
 		)
 	}
@@ -514,45 +545,7 @@ func (db *DB) ListConversations(limit, offset int, search, sortBy, projectID str
 		return nil, fmt.Errorf("查询对话列表失败: %w", err)
 	}
 	defer rows.Close()
-
-	var conversations []*Conversation
-	for rows.Next() {
-		var conv Conversation
-		var createdAt, updatedAt string
-		var pinned int
-		var projectID sql.NullString
-
-		if err := rows.Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID); err != nil {
-			return nil, fmt.Errorf("扫描对话失败: %w", err)
-		}
-		if projectID.Valid {
-			conv.ProjectID = strings.TrimSpace(projectID.String)
-		}
-
-		// 尝试多种时间格式解析
-		var err1, err2 error
-		conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAt)
-		if err1 != nil {
-			conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05", createdAt)
-		}
-		if err1 != nil {
-			conv.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		}
-
-		conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05.999999999-07:00", updatedAt)
-		if err2 != nil {
-			conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05", updatedAt)
-		}
-		if err2 != nil {
-			conv.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-		}
-
-		conv.Pinned = pinned != 0
-
-		conversations = append(conversations, &conv)
-	}
-
-	return conversations, nil
+	return scanConversationRows(rows)
 }
 
 func (db *DB) ListConversationsForAccess(limit, offset int, search, sortBy, projectID, userID, scope string) ([]*Conversation, error) {
@@ -571,7 +564,7 @@ func (db *DB) ListConversationsForAccess(limit, offset int, search, sortBy, proj
 		where, args = appendConversationAccessFilter(where, args, userID, scope, "c")
 		args = append(args, limit, offset)
 		rows, err = db.Query(
-			`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id
+			`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id, c.role_name
 			 FROM conversations c`+where+`
 			 `+orderClause+`
 			 LIMIT ? OFFSET ?`, args...)
@@ -586,7 +579,7 @@ func (db *DB) ListConversationsForAccess(limit, offset int, search, sortBy, proj
 		}
 		args = append(args, limit, offset)
 		rows, err = db.Query(
-			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id FROM conversations"+where+" "+orderClause+" LIMIT ? OFFSET ?",
+			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id, role_name FROM conversations"+where+" "+orderClause+" LIMIT ? OFFSET ?",
 			args...)
 	}
 	if err != nil {
@@ -603,11 +596,15 @@ func scanConversationRows(rows *sql.Rows) ([]*Conversation, error) {
 		var createdAt, updatedAt string
 		var pinned int
 		var projectID sql.NullString
-		if err := rows.Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID); err != nil {
+		var roleName sql.NullString
+		if err := rows.Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID, &roleName); err != nil {
 			return nil, fmt.Errorf("扫描对话失败: %w", err)
 		}
 		if projectID.Valid {
 			conv.ProjectID = strings.TrimSpace(projectID.String)
+		}
+		if roleName.Valid {
+			conv.RoleName = normalizeConversationRoleName(roleName.String)
 		}
 		var err1, err2 error
 		conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAt)
@@ -668,7 +665,7 @@ func (db *DB) ListUngroupedConversations(limit, offset int, sortBy, projectID st
 	where, args = appendConversationProjectFilter(where, args, projectID, "c")
 	args = append(args, limit, offset)
 	rows, err := db.Query(
-		`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id `+
+		`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id, c.role_name `+
 			where+`
 		 `+orderClause+`
 		 LIMIT ? OFFSET ?`,
@@ -678,43 +675,7 @@ func (db *DB) ListUngroupedConversations(limit, offset int, sortBy, projectID st
 		return nil, fmt.Errorf("查询未分组对话失败: %w", err)
 	}
 	defer rows.Close()
-
-	var conversations []*Conversation
-	for rows.Next() {
-		var conv Conversation
-		var createdAt, updatedAt string
-		var pinned int
-		var projectID sql.NullString
-
-		if err := rows.Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID); err != nil {
-			return nil, fmt.Errorf("扫描对话失败: %w", err)
-		}
-		if projectID.Valid {
-			conv.ProjectID = strings.TrimSpace(projectID.String)
-		}
-
-		var err1, err2 error
-		conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAt)
-		if err1 != nil {
-			conv.CreatedAt, err1 = time.Parse("2006-01-02 15:04:05", createdAt)
-		}
-		if err1 != nil {
-			conv.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		}
-
-		conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05.999999999-07:00", updatedAt)
-		if err2 != nil {
-			conv.UpdatedAt, err2 = time.Parse("2006-01-02 15:04:05", updatedAt)
-		}
-		if err2 != nil {
-			conv.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-		}
-
-		conv.Pinned = pinned != 0
-		conversations = append(conversations, &conv)
-	}
-
-	return conversations, rows.Err()
+	return scanConversationRows(rows)
 }
 
 func (db *DB) ListUngroupedConversationsForAccess(limit, offset int, sortBy, projectID, userID, scope string) ([]*Conversation, error) {
@@ -728,7 +689,7 @@ func (db *DB) ListUngroupedConversationsForAccess(limit, offset int, sortBy, pro
 	where, args = appendConversationAccessFilter(where, args, userID, scope, "c")
 	args = append(args, limit, offset)
 	rows, err := db.Query(
-		`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id `+
+		`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id, c.role_name `+
 			where+`
 		 `+orderClause+`
 		 LIMIT ? OFFSET ?`,

@@ -183,6 +183,7 @@ func (db *DB) initTables() error {
 		title TEXT NOT NULL,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL,
+		role_name TEXT NOT NULL DEFAULT '默认',
 		last_react_input TEXT,
 		last_react_output TEXT
 	);`
@@ -1148,6 +1149,21 @@ func (db *DB) migrateConversationsTable() error {
 	} else if count == 0 {
 		if _, err := db.Exec("ALTER TABLE conversations ADD COLUMN webshell_connection_id TEXT"); err != nil {
 			db.logger.Warn("添加webshell_connection_id字段失败", zap.Error(err))
+		}
+	}
+
+	// 检查 role_name 字段是否存在（对话绑定的业务角色，用于历史任务切换时恢复角色上下文）
+	err = db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name='role_name'").Scan(&count)
+	if err != nil {
+		if _, addErr := db.Exec("ALTER TABLE conversations ADD COLUMN role_name TEXT NOT NULL DEFAULT '默认'"); addErr != nil {
+			errMsg := strings.ToLower(addErr.Error())
+			if !strings.Contains(errMsg, "duplicate column") && !strings.Contains(errMsg, "already exists") {
+				db.logger.Warn("添加role_name字段失败", zap.Error(addErr))
+			}
+		}
+	} else if count == 0 {
+		if _, err := db.Exec("ALTER TABLE conversations ADD COLUMN role_name TEXT NOT NULL DEFAULT '默认'"); err != nil {
+			db.logger.Warn("添加role_name字段失败", zap.Error(err))
 		}
 	}
 

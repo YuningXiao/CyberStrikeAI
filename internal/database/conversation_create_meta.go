@@ -5,6 +5,7 @@ type ConversationCreateMeta struct {
 	Source               string
 	WebShellConnectionID string
 	ProjectID            string
+	RoleName             string
 	ClientIP             string
 	SessionHint          string
 }
